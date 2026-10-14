@@ -36,6 +36,9 @@ export interface HuntRequestPayload {
   lng: number;
   radiusKm?: number;
   targetCount?: number;
+  isGlobal?: boolean;
+  shundoOnly?: boolean;
+  hiddenSpecies?: string[];
   shinyAccount?: string;
   token?: string;
 }

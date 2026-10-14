@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Header } from "@/components/Header";
 import { ControlPanel } from "@/components/ControlPanel";
-import { FilterBar } from "@/components/FilterBar";
+import { FilterBar, SpeciesCountItem } from "@/components/FilterBar";
 import { ShinyCard } from "@/components/ShinyCard";
 import {
   PokemonSpawn,
@@ -19,7 +19,8 @@ export default function Home() {
   const [lat, setLat] = useState<number>(43.5442968);
   const [lng, setLng] = useState<number>(-79.7399437);
   const [radiusKm, setRadiusKm] = useState<number>(50);
-  const [targetCount, setTargetCount] = useState<number>(30);
+  const [targetCount, setTargetCount] = useState<number>(100);
+  const [isShundoGlobal, setIsShundoGlobal] = useState<boolean>(false);
 
   // Estados de Busca e Dados
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -30,6 +31,7 @@ export default function Home() {
   const [capturedIds, setCapturedIds] = useState<Set<string>>(new Set());
   const [revealedCoordsMap, setRevealedCoordsMap] = useState<Record<string, string>>({});
   const [hideCaptured, setHideCaptured] = useState<boolean>(false);
+  const [hiddenSpecies, setHiddenSpecies] = useState<Set<string>>(new Set());
 
   // Rate limit de reveal
   const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
@@ -89,6 +91,14 @@ export default function Home() {
       if (savedHideCaptured !== null) {
         setHideCaptured(savedHideCaptured === "true");
       }
+
+      const savedHiddenSpecies = localStorage.getItem("pogo_hidden_species");
+      if (savedHiddenSpecies) {
+        const parsed = JSON.parse(savedHiddenSpecies);
+        if (Array.isArray(parsed)) {
+          setHiddenSpecies(new Set(parsed));
+        }
+      }
     } catch {
       // Ignora erro no localStorage em modo anônimo
     }
@@ -129,6 +139,33 @@ export default function Home() {
       return next;
     });
   }, []);
+
+  // Alternar ocultação de espécie específica (ex: Cacnea)
+  const toggleHideSpecies = useCallback((speciesName: string) => {
+    setHiddenSpecies((prev) => {
+      const next = new Set(prev);
+      if (next.has(speciesName)) {
+        next.delete(speciesName);
+        showToast(`Exibindo ${speciesName} novamente.`);
+      } else {
+        next.add(speciesName);
+        showToast(`${speciesName} ocultado do radar.`);
+      }
+      try {
+        localStorage.setItem("pogo_hidden_species", JSON.stringify(Array.from(next)));
+      } catch {}
+      return next;
+    });
+  }, [showToast]);
+
+  // Limpar todas as espécies ocultadas
+  const clearHiddenSpecies = useCallback(() => {
+    setHiddenSpecies(new Set());
+    try {
+      localStorage.removeItem("pogo_hidden_species");
+    } catch {}
+    showToast("Todas as espécies foram reexibidas.");
+  }, [showToast]);
 
   // Salvar revelação de coordenadas
   const handleRevealSuccess = useCallback(
@@ -173,7 +210,10 @@ export default function Home() {
           lat,
           lng,
           radiusKm,
-          targetCount
+          targetCount,
+          isGlobal: isShundoGlobal,
+          shundoOnly: isShundoGlobal,
+          hiddenSpecies: Array.from(hiddenSpecies)
         })
       });
 
@@ -186,13 +226,27 @@ export default function Home() {
       }
 
       setAllPokemons(data.results || []);
-      showToast(`${data.results?.length || 0} shinys encontrados.`);
+      const countMsg = isShundoGlobal
+        ? `${data.results?.length || 0} Shundos (100% IV) ativos no mundo!`
+        : `${data.results?.length || 0} shinys encontrados.`;
+      showToast(countMsg);
     } catch (err: any) {
       setErrorMessage(err.message || "Erro de rede ao conectar com o radar.");
     } finally {
       setIsLoading(false);
     }
   };
+
+  // Contagem de cada espécie disponível nos resultados brutos da busca
+  const availableSpeciesList: SpeciesCountItem[] = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of allPokemons) {
+      counts.set(p.pokemon_name, (counts.get(p.pokemon_name) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [allPokemons]);
 
   // Filtragem e Ordenação
   const filteredPokemons = useMemo(() => {
@@ -205,6 +259,9 @@ export default function Home() {
           const despawnMs = new Date(p.despawn_at).getTime();
           if (despawnMs <= currentTime) return false;
         }
+
+        // Filtro de Espécies Ocultadas pelo Usuário (ex: Cacnea)
+        if (hiddenSpecies.has(p.pokemon_name)) return false;
 
         // Filtro Ocultar Pegos
         if (hideCaptured && isCap) return false;
@@ -262,7 +319,7 @@ export default function Home() {
         }
         return 0;
       });
-  }, [allPokemons, capturedIds, hideCaptured, searchQuery, ivFilter, sortOption, currentTime, revealedCoordsMap, lat, lng]);
+  }, [allPokemons, capturedIds, hiddenSpecies, hideCaptured, searchQuery, ivFilter, sortOption, currentTime, revealedCoordsMap, lat, lng]);
 
   const capturedCount = useMemo(() => {
     return allPokemons.filter((p) => capturedIds.has(p.encounter_id)).length;
@@ -282,12 +339,14 @@ export default function Home() {
         radiusKm={radiusKm}
         targetCount={targetCount}
         isLoading={isLoading}
+        isShundoGlobal={isShundoGlobal}
         onCoordinatesChange={(newLat, newLng) => {
           setLat(newLat);
           setLng(newLng);
         }}
         onRadiusChange={(r) => setRadiusKm(r)}
         onTargetCountChange={(c) => setTargetCount(c)}
+        onToggleShundoGlobal={(isGlobal) => setIsShundoGlobal(isGlobal)}
         onExecuteScan={handleExecuteScan}
       />
 
@@ -302,7 +361,7 @@ export default function Home() {
       {/* Resultados e Filtros */}
       {allPokemons.length > 0 && (
         <div className="mt-4 space-y-3">
-          {/* Barra de Filtros */}
+          {/* Barra de Filtros com Gerenciador de Espécies */}
           <FilterBar
             hideCaptured={hideCaptured}
             totalCount={allPokemons.length}
@@ -311,17 +370,21 @@ export default function Home() {
             searchQuery={searchQuery}
             ivFilter={ivFilter}
             sortOption={sortOption}
+            hiddenSpecies={hiddenSpecies}
+            availableSpeciesList={availableSpeciesList}
             onToggleHideCaptured={toggleHideCaptured}
             onSearchChange={setSearchQuery}
             onIvFilterChange={setIvFilter}
             onSortOptionChange={setSortOption}
+            onToggleHideSpecies={toggleHideSpecies}
+            onClearHiddenSpecies={clearHiddenSpecies}
             onClearCaptured={handleClearCaptured}
           />
 
           {/* Lista de Cards Compactos */}
           {filteredPokemons.length === 0 ? (
             <div className="py-8 text-center rounded-2xl border border-[#27272a] bg-[#121214] p-4 text-xs text-zinc-400">
-              Nenhum Pokémon corresponde aos filtros ativos.
+              Nenhum Pokémon corresponde aos filtros ou espécies ativas.
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -335,6 +398,7 @@ export default function Home() {
                   onToggleCaptured={toggleCaptured}
                   onRevealSuccess={handleRevealSuccess}
                   onRateLimited={(retry) => setCooldownSeconds(retry)}
+                  onHideSpecies={toggleHideSpecies}
                   onToast={showToast}
                 />
               ))}

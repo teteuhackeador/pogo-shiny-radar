@@ -3,6 +3,7 @@ import {
   BASE_API_URL,
   DEFAULT_POGO_TOKEN,
   DEFAULT_TRAINER_CODE,
+  POGO_TOKENS,
   calculateDistanceKm
 } from "@/lib/constants";
 import { PokemonSpawn } from "@/types/pokemon";
@@ -28,26 +29,113 @@ export async function POST(req: NextRequest) {
     const lat = parseFloat(body.lat);
     const lng = parseFloat(body.lng);
     const radiusKm = parseFloat(body.radiusKm || 50);
-    const targetCount = Math.min(parseInt(body.targetCount || 50, 10), 150);
+    const targetCount = Math.min(parseInt(body.targetCount || 100, 10), 150);
     const trainerCode = body.shinyAccount || DEFAULT_TRAINER_CODE;
-    const authToken = body.token || DEFAULT_POGO_TOKEN;
-
-    if (isNaN(lat) || isNaN(lng)) {
-      return NextResponse.json(
-        { success: false, error: "Coordenadas 'lat' e 'lng' são obrigatórias e devem ser números." },
-        { status: 400 }
-      );
-    }
+    const isGlobal = !!body.isGlobal || !!body.shundoGlobal;
+    const shundoOnly = !!body.shundoOnly || !!body.shundoGlobal;
+    const hiddenSpecies: string[] = Array.isArray(body.hiddenSpecies) ? body.hiddenSpecies : [];
 
     const allShinys = new Map<string, PokemonSpawn>();
     const now = Date.now();
     let totalQueries = 0;
 
     // =========================================================================
-    // ETAPA 1: Varredura em Grade por Bounding Box (4 Quadrantes em Paralelo)
+    // MODO ESPECIAL: SHUNDO GLOBAL / ÁREA INFINITA (100% IV Mundial)
+    // =========================================================================
+    if (isGlobal || shundoOnly) {
+      const blacklistIds: number[] = [];
+      const maxRounds = 8; // Até 8 rodadas x 10 resultados = até 80 Shundos diferentes
+
+      for (let round = 0; round < maxRounds && allShinys.size < targetCount; round++) {
+        totalQueries++;
+        const currentToken = POGO_TOKENS[round % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+
+        try {
+          const res = await fetch(`${BASE_API_URL}/search`, {
+            method: "POST",
+            headers: getRandomSpoofedHeaders(currentToken),
+            body: JSON.stringify({
+              shiny_only: true,
+              shiny_account: trainerCode,
+              iv_min: 100,
+              sort: "IV",
+              blacklist_pokemon_ids: blacklistIds
+            })
+          });
+
+          if (!res.ok) {
+            console.warn(`Aviso /search Shundo Global [Rodada ${round + 1}]: HTTP ${res.status}`);
+            break;
+          }
+
+          const data = await res.json();
+          const results: any[] = data.results || [];
+          if (results.length === 0) break;
+
+          for (const p of results) {
+            // Descartar expirados
+            if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+
+            // Alimenta a blacklist para a próxima rodada trazer espécies novas
+            if (p.pokemon_id && !blacklistIds.includes(p.pokemon_id)) {
+              blacklistIds.push(p.pokemon_id);
+            }
+
+            // Se o usuário ocultou essa espécie, não adiciona aos resultados da tela
+            if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+            if (allShinys.has(p.encounter_id)) continue;
+
+            // Se coordenadas de referência foram passadas, calcula a distância até o país/cidade
+            const dist =
+              p.apx_lat != null && p.apx_long != null && !isNaN(lat) && !isNaN(lng)
+                ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
+                : null;
+
+            allShinys.set(p.encounter_id, {
+              ...p,
+              shiny: true,
+              exact_coords: null,
+              distance_km: dist
+            });
+          }
+        } catch (err) {
+          console.warn(`Erro na rodada ${round + 1} de Shundo Global:`, err);
+          break;
+        }
+      }
+
+      const finalList = Array.from(allShinys.values())
+        .filter((p) => {
+          if (!p.despawn_at) return true;
+          return new Date(p.despawn_at).getTime() > now;
+        })
+        .slice(0, targetCount);
+
+      return NextResponse.json({
+        success: true,
+        count: finalList.length,
+        rounds: totalQueries,
+        mode: "shundo_global",
+        results: finalList
+      });
+    }
+
+    // =========================================================================
+    // MODO LOCAL: Coordenadas Obrigatórias
+    // =========================================================================
+    if (isNaN(lat) || isNaN(lng)) {
+      return NextResponse.json(
+        { success: false, error: "Coordenadas 'lat' e 'lng' são obrigatórias para busca local." },
+        { status: 400 }
+      );
+    }
+
+    // =========================================================================
+    // ETAPA 1: Varredura em Grade por Bounding Box (5 Quadrantes em Paralelo)
     // Extraído do Relatório de Auditoria (Falha 4): o endpoint /map/lookup aceita
     // bounding boxes sem rate-limiting e entrega até 100 resultados com apx_lat/lng.
-    // Ao dividir a área em 4 quadrantes simultâneos, capturamos 60-100+ shinys instantaneamente!
+    // Ao dividir a área em 5 quadrantes simultâneos, capturamos dezenas de shinys!
     // =========================================================================
     try {
       const deltaLat = radiusKm / 111.0;
@@ -61,12 +149,14 @@ export async function POST(req: NextRequest) {
         { name: "SW", n: lat, s: lat - deltaLat, w: lng - deltaLng, e: lng }
       ];
 
-      const tilePromises = tiles.map(async (t) => {
+      const tilePromises = tiles.map(async (t, idx) => {
         totalQueries++;
+        const token = POGO_TOKENS[idx % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+
         try {
           const res = await fetch(`${BASE_API_URL}/map/lookup`, {
             method: "POST",
-            headers: getRandomSpoofedHeaders(authToken),
+            headers: getRandomSpoofedHeaders(token),
             body: JSON.stringify({
               mode: "pokemon",
               n_lat: t.n,
@@ -99,11 +189,11 @@ export async function POST(req: NextRequest) {
 
       for (const batch of tileResults) {
         for (const p of batch) {
-          // Descartar spawns expirados no servidor
           if (p.despawn_at_ms && p.despawn_at_ms <= now) continue;
-
-          // Se já temos esse encounter_id, não duplicamos
           if (allShinys.has(p.encounter_id)) continue;
+
+          // Se estiver na lista de espécies ocultas pelo usuário, ignora
+          if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
           const dist =
             p.apx_lat != null && p.apx_long != null
@@ -140,7 +230,7 @@ export async function POST(req: NextRequest) {
             apx_lat: p.apx_lat ?? null,
             apx_long: p.apx_long ?? null,
             distance_km: dist,
-            exact_coords: null // Coordenada exata preservada para reveal sob demanda
+            exact_coords: null
           });
         }
       }
@@ -149,14 +239,15 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================================================================
-    // ETAPA 2: Enriquecimento via /search (com cabeçalho IP rotativo contra 429)
-    // Tenta enriquecer com nomes textuais de cidades e ataques sem travar caso haja 429
+    // ETAPA 2: Enriquecimento via /search Local
     // =========================================================================
     try {
       totalQueries++;
+      const sToken = POGO_TOKENS[1 % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+
       const sRes = await fetch(`${BASE_API_URL}/search`, {
         method: "POST",
-        headers: getRandomSpoofedHeaders(authToken),
+        headers: getRandomSpoofedHeaders(sToken),
         body: JSON.stringify({
           shiny_only: true,
           shiny_account: trainerCode,
@@ -174,6 +265,7 @@ export async function POST(req: NextRequest) {
 
         for (const p of sResults) {
           if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+          if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
           if (allShinys.has(p.encounter_id)) {
             const existing = allShinys.get(p.encounter_id)!;
@@ -197,7 +289,6 @@ export async function POST(req: NextRequest) {
         }
       }
     } catch (sErr) {
-      // Falha graciosa: /search pode estar em cooldown mas /map/lookup já nos deu todos os dados vitais!
       console.warn("Aviso: /search offline ou limitado, mantendo dados do mapa:", sErr);
     }
 
@@ -218,6 +309,7 @@ export async function POST(req: NextRequest) {
       success: true,
       count: finalList.length,
       rounds: totalQueries,
+      mode: "local",
       results: finalList
     });
   } catch (error: any) {
@@ -234,12 +326,14 @@ export async function GET(req: NextRequest) {
   const lat = parseFloat(searchParams.get("lat") || "43.5442968");
   const lng = parseFloat(searchParams.get("lng") || "-79.7399437");
   const radiusKm = parseFloat(searchParams.get("radiusKm") || "50");
-  const targetCount = parseInt(searchParams.get("targetCount") || "50", 10);
+  const targetCount = parseInt(searchParams.get("targetCount") || "100", 10);
+  const isGlobal = searchParams.get("global") === "true";
+  const shundoOnly = searchParams.get("shundo") === "true";
 
   const fakeReq = new NextRequest(req.url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ lat, lng, radiusKm, targetCount })
+    body: JSON.stringify({ lat, lng, radiusKm, targetCount, isGlobal, shundoOnly })
   });
 
   return POST(fakeReq);

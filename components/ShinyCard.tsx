@@ -11,7 +11,8 @@ import {
   Loader2,
   CheckSquare,
   Square,
-  MapPin
+  MapPin,
+  EyeOff
 } from "lucide-react";
 
 interface ShinyCardProps {
@@ -22,6 +23,7 @@ interface ShinyCardProps {
   onToggleCaptured: (encounterId: string) => void;
   onRevealSuccess: (encounterId: string, coords: string) => void;
   onRateLimited: (retryAfter: number) => void;
+  onHideSpecies?: (speciesName: string) => void;
   onToast?: (message: string) => void;
 }
 
@@ -33,6 +35,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
   onToggleCaptured,
   onRevealSuccess,
   onRateLimited,
+  onHideSpecies,
   onToast
 }) => {
   const [imgSrc, setImgSrc] = useState<string>(getPokemonSpriteUrl(pokemon.pokemon_id));
@@ -234,24 +237,39 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
           </div>
         </div>
 
-        {/* Botão/Checkbox "Peguei" */}
-        <button
-          type="button"
-          onClick={() => onToggleCaptured(pokemon.encounter_id)}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-            isCaptured
-              ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/60"
-              : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
-          }`}
-          title={isCaptured ? "Marcar como não capturado" : "Marcar como capturado"}
-        >
-          {isCaptured ? (
-            <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
-          ) : (
-            <Square className="w-3.5 h-3.5 text-zinc-500" />
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Botão Ocultar Espécie */}
+          {onHideSpecies && (
+            <button
+              type="button"
+              onClick={() => onHideSpecies(pokemon.pokemon_name)}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-[#18181b] hover:bg-rose-950/40 text-zinc-400 hover:text-rose-300 border border-[#27272a] hover:border-rose-900/50 transition-colors"
+              title={`Ocultar todos os ${pokemon.pokemon_name} do radar`}
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Ocultar</span>
+            </button>
           )}
-          <span>{isCaptured ? "Peguei" : "Peguei"}</span>
-        </button>
+
+          {/* Botão/Checkbox "Peguei" */}
+          <button
+            type="button"
+            onClick={() => onToggleCaptured(pokemon.encounter_id)}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+              isCaptured
+                ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/60"
+                : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
+            }`}
+            title={isCaptured ? "Marcar como não capturado" : "Marcar como capturado"}
+          >
+            {isCaptured ? (
+              <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Square className="w-3.5 h-3.5 text-zinc-500" />
+            )}
+            <span>Peguei</span>
+          </button>
+        </div>
       </div>
 
       {/* Linha Central: Sprite + Detalhes de Despawn e Localização */}

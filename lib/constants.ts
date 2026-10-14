@@ -1,6 +1,14 @@
-export const DEFAULT_POGO_TOKEN =
+export const POGO_TOKENS: string[] = [
   process.env.POGO_JWT_TOKEN ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzYjRjZGU2Zi0wNzY3LTRiZTEtOTMwMC0wZGU3ZDAyNmZjNmQifQ.hKQkkTgmkvfMbR_uYaOBbHfTSSTh7_8cVF5h2OHm70I";
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzYjRjZGU2Zi0wNzY3LTRiZTEtOTMwMC0wZGU3ZDAyNmZjNmQifQ.hKQkkTgmkvfMbR_uYaOBbHfTSSTh7_8cVF5h2OHm70I",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzYzg3ZTQzYS1lY2YzLTRiYjEtOGRjNy1jODQ1NzkzOWQ2NDQifQ._IwwJskpBxvlR9T1YZKx2R6PmW8-5ocRYMFVxTNj0zk"
+];
+
+export const DEFAULT_POGO_TOKEN = POGO_TOKENS[0];
+
+export function getRandomToken(): string {
+  return POGO_TOKENS[Math.floor(Math.random() * POGO_TOKENS.length)];
+}
 
 export const DEFAULT_TRAINER_CODE =
   process.env.POGO_TRAINER_CODE || "489652495004";

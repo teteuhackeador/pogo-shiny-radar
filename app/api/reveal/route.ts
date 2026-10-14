@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { BASE_API_URL, DEFAULT_POGO_TOKEN } from "@/lib/constants";
+import { BASE_API_URL, DEFAULT_POGO_TOKEN, POGO_TOKENS } from "@/lib/constants";
 import { RevealResponse } from "@/types/pokemon";
 
 // Cache em memória para não consumir cota do Mestre se o mesmo Pokémon for consultado novamente
@@ -50,42 +50,63 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const res = await fetch(`${BASE_API_URL}/reveal/${encodeURIComponent(revealCode)}`, {
-      method: "GET",
-      headers: getRandomSpoofedHeaders(authToken)
-    });
+    let finalRes: Response | null = null;
+    let maxRetryAfter = 180;
+    const tokensToTry = Array.from(new Set([authToken, ...POGO_TOKENS]));
 
-    if (res.status === 429) {
-      let retryAfter = 180;
+    for (const token of tokensToTry) {
       try {
-        const errorData = await res.json();
-        if (errorData?.detail?.retry_after) {
-          retryAfter = parseInt(errorData.detail.retry_after, 10);
-        }
-      } catch (e) {
-        // Fallback
-      }
+        const res = await fetch(`${BASE_API_URL}/reveal/${encodeURIComponent(revealCode)}`, {
+          method: "GET",
+          headers: getRandomSpoofedHeaders(token)
+        });
 
-      // Se temos coordenadas aproximadas, devolvemos como fallback para o usuário nunca ficar travado!
+        if (res.ok) {
+          finalRes = res;
+          break;
+        }
+
+        if (res.status === 429) {
+          try {
+            const errorData = await res.json();
+            if (errorData?.detail?.retry_after) {
+              maxRetryAfter = parseInt(errorData.detail.retry_after, 10);
+            }
+          } catch {}
+          // Passa para o próximo token do pool
+          continue;
+        }
+
+        finalRes = res;
+        break;
+      } catch {
+        continue;
+      }
+    }
+
+    if (!finalRes || !finalRes.ok) {
+      // Se todos os tokens atingiram rate limit, entregamos coordenadas aproximadas imediatamente
       if (apxLat != null && apxLng != null) {
         return NextResponse.json({
           success: true,
           coords: `${apxLat},${apxLng}`,
           is_approx: true,
-          retry_after: retryAfter,
-          message: `Cota de reveals da API atingida (${retryAfter}s). Fornecendo coordenadas aproximadas (~100m).`
+          retry_after: maxRetryAfter,
+          message: `Cota de reveals atingida nas contas (${maxRetryAfter}s). Fornecendo coordenadas aproximadas (~100m).`
         });
       }
 
       const response: RevealResponse = {
         success: false,
         error: "rate_limited",
-        retry_after: retryAfter,
-        message: `Limite de 10 reveals atingido na API. Libera em ${retryAfter} segundos.`
+        retry_after: maxRetryAfter,
+        message: `Limite de reveals atingido na API. Libera em ${maxRetryAfter} segundos.`
       };
 
       return NextResponse.json(response, { status: 429 });
     }
+
+    const res = finalRes;
 
     if (!res.ok) {
       const errorText = await res.text();

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { GEO_PRESETS, GeoPreset } from "@/lib/constants";
-import { Navigation, Loader2, Sparkles } from "lucide-react";
+import { Navigation, Loader2, Sparkles, Globe, Compass } from "lucide-react";
 
 interface ControlPanelProps {
   lat: number;
@@ -10,9 +10,11 @@ interface ControlPanelProps {
   radiusKm: number;
   targetCount: number;
   isLoading: boolean;
+  isShundoGlobal: boolean;
   onCoordinatesChange: (lat: number, lng: number) => void;
   onRadiusChange: (radius: number) => void;
   onTargetCountChange: (count: number) => void;
+  onToggleShundoGlobal: (isGlobal: boolean) => void;
   onExecuteScan: () => void;
 }
 
@@ -22,9 +24,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   radiusKm,
   targetCount,
   isLoading,
+  isShundoGlobal,
   onCoordinatesChange,
   onRadiusChange,
   onTargetCountChange,
+  onToggleShundoGlobal,
   onExecuteScan
 }) => {
   const [coordsInput, setCoordsInput] = useState<string>(`${lat},${lng}`);
@@ -81,16 +85,45 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     const parts = coordsInput.split(",").map((s) => parseFloat(s.trim()));
     if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
       onCoordinatesChange(parts[0], parts[1]);
-      onExecuteScan();
     }
+    onExecuteScan();
   };
 
   return (
-    <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-3.5 sm:p-4 shadow-sm text-zinc-100">
+    <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-3.5 sm:p-4 shadow-sm text-zinc-100 space-y-3">
+      {/* Abas Superiores de Modo: Radar Local vs Shundo Global */}
+      <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-[#0e0e11] border border-[#27272a]">
+        <button
+          type="button"
+          onClick={() => onToggleShundoGlobal(false)}
+          className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            !isShundoGlobal
+              ? "bg-[#1f1f23] text-zinc-100 border border-zinc-700/60 shadow-sm"
+              : "text-zinc-400 hover:text-zinc-200"
+          }`}
+        >
+          <Compass className="w-3.5 h-3.5 text-zinc-300" />
+          <span>Radar Local</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onToggleShundoGlobal(true)}
+          className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            isShundoGlobal
+              ? "bg-amber-950/40 text-amber-300 border border-amber-600/50 shadow-sm"
+              : "text-zinc-400 hover:text-amber-300/80"
+          }`}
+        >
+          <Globe className="w-3.5 h-3.5 text-amber-400" />
+          <span>Shundo Global</span>
+        </button>
+      </div>
+
       {/* Presets Rápidos */}
-      <div className="mb-3">
+      <div>
         <div className="text-[11px] font-medium text-zinc-400 mb-1.5 flex items-center justify-between">
-          <span>Locais Rápidos</span>
+          <span>{isShundoGlobal ? "Referência de Distância" : "Locais Rápidos"}</span>
         </div>
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
           {GEO_PRESETS.map((preset) => {
@@ -114,11 +147,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </div>
       </div>
 
-      {/* Formulário: Campo Único de Coordenadas + Botão GPS */}
+      {/* Formulário: Coordenadas + Botão GPS */}
       <form onSubmit={handleFormSubmit} className="space-y-3">
         <div>
           <label className="block text-[11px] font-medium text-zinc-400 mb-1">
-            Coordenadas (Latitude, Longitude)
+            {isShundoGlobal ? "Sua Posição (para cálculo de distância e cooldown)" : "Coordenadas (Latitude, Longitude)"}
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -152,25 +185,33 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <div className="grid grid-cols-2 gap-2.5 pt-1">
           <div>
             <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
-              <span>Raio</span>
-              <span className="font-mono text-zinc-200 font-semibold">{radiusKm}km</span>
+              <span>{isShundoGlobal ? "Área de Busca" : "Raio"}</span>
+              <span className="font-mono text-zinc-200 font-semibold">
+                {isShundoGlobal ? "Infinita" : `${radiusKm}km`}
+              </span>
             </div>
-            <div className="grid grid-cols-4 gap-1">
-              {[15, 30, 50, 100].map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => onRadiusChange(r)}
-                  className={`py-1 rounded-lg text-[11px] font-mono transition-colors ${
-                    radiusKm === r
-                      ? "bg-zinc-200 text-zinc-950 font-bold"
-                      : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
-                  }`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
+            {isShundoGlobal ? (
+              <div className="py-1 px-2.5 rounded-lg text-[11px] font-medium bg-amber-950/20 text-amber-300 border border-amber-800/40 text-center truncate">
+                Mundial (Planeta)
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-1">
+                {[15, 30, 50, 100].map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => onRadiusChange(r)}
+                    className={`py-1 rounded-lg text-[11px] font-mono transition-colors ${
+                      radiusKm === r
+                        ? "bg-zinc-200 text-zinc-950 font-bold"
+                        : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -179,7 +220,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <span className="font-mono text-zinc-200 font-semibold">{targetCount}</span>
             </div>
             <div className="grid grid-cols-4 gap-1">
-              {[10, 20, 30, 50].map((c) => (
+              {[25, 50, 75, 100].map((c) => (
                 <button
                   key={c}
                   type="button"
@@ -206,6 +247,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide flex items-center justify-center gap-2 transition-all active:scale-[0.99] ${
               isLoading
                 ? "bg-zinc-800 text-zinc-400 border border-[#27272a] cursor-wait"
+                : isShundoGlobal
+                ? "bg-amber-400 hover:bg-amber-300 text-zinc-950 font-bold border border-amber-300 shadow-md shadow-amber-950/30"
                 : "bg-zinc-100 hover:bg-white text-zinc-950 font-bold border border-zinc-200 shadow-sm"
             }`}
           >
@@ -213,6 +256,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
                 <span>Varrendo satélites...</span>
+              </>
+            ) : isShundoGlobal ? (
+              <>
+                <Sparkles className="w-3.5 h-3.5 text-zinc-950" />
+                <span>Buscar Shundos no Mundo Todo (100% IV)</span>
               </>
             ) : (
               <>
