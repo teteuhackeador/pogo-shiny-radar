@@ -7,15 +7,14 @@ import { FilterBar } from "@/components/FilterBar";
 import { ShinyCard } from "@/components/ShinyCard";
 import {
   PokemonSpawn,
-  TabOption,
   IvFilterOption,
   SortOption,
   HuntResponse
 } from "@/types/pokemon";
-import { Sparkles, Radar, AlertTriangle, Trophy, CheckCircle, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 export default function Home() {
-  // Coordenadas Centrais Iniciais (Ontário / Mississauga do Mestre)
+  // Coordenadas Centrais Iniciais (Mississauga / Ontário)
   const [lat, setLat] = useState<number>(43.5442968);
   const [lng, setLng] = useState<number>(-79.7399437);
   const [radiusKm, setRadiusKm] = useState<number>(50);
@@ -24,23 +23,32 @@ export default function Home() {
   // Estados de Busca e Dados
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [allPokemons, setAllPokemons] = useState<PokemonSpawn[]>([]);
-  const [roundsExecuted, setRoundsExecuted] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Persistência em LocalStorage
   const [capturedIds, setCapturedIds] = useState<Set<string>>(new Set());
   const [revealedCoordsMap, setRevealedCoordsMap] = useState<Record<string, string>>({});
+  const [hideCaptured, setHideCaptured] = useState<boolean>(false);
 
   // Rate limit de reveal
   const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
 
   // Filtros de UI
-  const [currentTab, setCurrentTab] = useState<TabOption>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [ivFilter, setIvFilter] = useState<IvFilterOption>("all");
   const [sortOption, setSortOption] = useState<SortOption>("despawn");
 
-  // Carrega preferências e capturados salvos no celular ao iniciar
+  // Toast discreto flutuante
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 2500);
+  }, []);
+
+  // Carrega preferências salvas no smartphone ao iniciar
   useEffect(() => {
     try {
       const savedCaptured = localStorage.getItem("pogo_captured_ids");
@@ -67,8 +75,13 @@ export default function Home() {
           setLng(parsed.lng);
         }
       }
-    } catch (e) {
-      console.warn("Falha ao recuperar dados do localStorage:", e);
+
+      const savedHideCaptured = localStorage.getItem("pogo_hide_captured");
+      if (savedHideCaptured !== null) {
+        setHideCaptured(savedHideCaptured === "true");
+      }
+    } catch {
+      // Ignora erro no localStorage em modo anônimo
     }
   }, []);
 
@@ -81,7 +94,7 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [cooldownSeconds]);
 
-  // Salvar no localStorage sempre que os capturados mudarem
+  // Alternar status de capturado
   const toggleCaptured = useCallback((encounterId: string) => {
     setCapturedIds((prev) => {
       const next = new Set(prev);
@@ -92,31 +105,46 @@ export default function Home() {
       }
       try {
         localStorage.setItem("pogo_captured_ids", JSON.stringify(Array.from(next)));
-      } catch (e) {}
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  // Alternar toggle "Ocultar pegos"
+  const toggleHideCaptured = useCallback(() => {
+    setHideCaptured((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("pogo_hide_captured", String(next));
+      } catch {}
       return next;
     });
   }, []);
 
   // Salvar revelação de coordenadas
-  const handleRevealSuccess = useCallback((encounterId: string, coords: string) => {
-    setRevealedCoordsMap((prev) => {
-      const next = { ...prev, [encounterId]: coords };
-      try {
-        localStorage.setItem("pogo_revealed_coords", JSON.stringify(next));
-      } catch (e) {}
-      return next;
-    });
-  }, []);
+  const handleRevealSuccess = useCallback(
+    (encounterId: string, coords: string) => {
+      setRevealedCoordsMap((prev) => {
+        const next = { ...prev, [encounterId]: coords };
+        try {
+          localStorage.setItem("pogo_revealed_coords", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    },
+    []
+  );
 
   // Limpar lista de capturados
   const handleClearCaptured = useCallback(() => {
-    if (confirm("Deseja realmente resetar o status de todos os pokémons capturados?")) {
+    if (confirm("Resetar todos os Pokémon marcados como capturados?")) {
       setCapturedIds(new Set());
       try {
         localStorage.removeItem("pogo_captured_ids");
-      } catch (e) {}
+      } catch {}
+      showToast("Lista de capturados resetada.");
     }
-  }, []);
+  }, [showToast]);
 
   // Execução do Scanner de Shinys via /api/hunt
   const handleExecuteScan = async () => {
@@ -126,7 +154,7 @@ export default function Home() {
     // Salva as últimas coordenadas utilizadas
     try {
       localStorage.setItem("pogo_last_coords", JSON.stringify({ lat, lng }));
-    } catch (e) {}
+    } catch {}
 
     try {
       const res = await fetch("/api/hunt", {
@@ -143,29 +171,28 @@ export default function Home() {
       const data: HuntResponse = await res.json();
 
       if (!res.ok || !data.success) {
-        setErrorMessage(data.error || "Erro ao consultar radar de satélites.");
+        setErrorMessage(data.error || "Erro ao consultar radar.");
         setIsLoading(false);
         return;
       }
 
       setAllPokemons(data.results || []);
-      setRoundsExecuted(data.rounds || 1);
+      showToast(`${data.results?.length || 0} shinys encontrados.`);
     } catch (err: any) {
-      setErrorMessage(err.message || "Erro de rede ao conectar com o servidor.");
+      setErrorMessage(err.message || "Erro de rede ao conectar com o radar.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Filtragem e Ordenação Reativa
+  // Filtragem e Ordenação
   const filteredPokemons = useMemo(() => {
     return allPokemons
       .filter((p) => {
         const isCap = capturedIds.has(p.encounter_id);
 
-        // Filtro por Tab
-        if (currentTab === "available" && isCap) return false;
-        if (currentTab === "captured" && !isCap) return false;
+        // Filtro Ocultar Pegos
+        if (hideCaptured && isCap) return false;
 
         // Filtro por Busca
         if (searchQuery.trim()) {
@@ -200,7 +227,7 @@ export default function Home() {
         }
         return 0;
       });
-  }, [allPokemons, capturedIds, currentTab, searchQuery, ivFilter, sortOption]);
+  }, [allPokemons, capturedIds, hideCaptured, searchQuery, ivFilter, sortOption]);
 
   const capturedCount = useMemo(() => {
     return allPokemons.filter((p) => capturedIds.has(p.encounter_id)).length;
@@ -209,11 +236,11 @@ export default function Home() {
   const availableCount = allPokemons.length - capturedCount;
 
   return (
-    <main className="min-h-screen bg-[#05060a] text-slate-100 px-3 py-4 sm:px-6 sm:py-8 max-w-7xl mx-auto selection:bg-purple-600 selection:text-white">
+    <main className="w-full max-w-lg mx-auto px-3 sm:px-4 py-3 min-h-screen pb-16">
       {/* Cabeçalho */}
       <Header cooldownSeconds={cooldownSeconds} totalFound={allPokemons.length} />
 
-      {/* Painel de Controle de GPS e Raio */}
+      {/* Painel de Coordenadas e Scan */}
       <ControlPanel
         lat={lat}
         lng={lng}
@@ -229,58 +256,40 @@ export default function Home() {
         onExecuteScan={handleExecuteScan}
       />
 
-      {/* Mensagem de Erro se houver */}
+      {/* Mensagem de Erro */}
       {errorMessage && (
-        <div className="mt-4 p-4 rounded-2xl bg-rose-950/40 border border-rose-800/60 text-rose-300 text-xs flex items-center gap-3">
-          <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+        <div className="mt-3 p-3 rounded-xl bg-rose-950/30 border border-rose-800/50 text-rose-300 text-xs flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
           <span>{errorMessage}</span>
         </div>
       )}
 
-      {/* Área de Resultados */}
+      {/* Resultados e Filtros */}
       {allPokemons.length > 0 && (
-        <div className="mt-6 space-y-4">
-          {/* Barra de Filtros e Abas */}
+        <div className="mt-4 space-y-3">
+          {/* Barra de Filtros */}
           <FilterBar
-            currentTab={currentTab}
+            hideCaptured={hideCaptured}
             totalCount={allPokemons.length}
             availableCount={availableCount}
             capturedCount={capturedCount}
             searchQuery={searchQuery}
             ivFilter={ivFilter}
             sortOption={sortOption}
-            onTabChange={setCurrentTab}
+            onToggleHideCaptured={toggleHideCaptured}
             onSearchChange={setSearchQuery}
             onIvFilterChange={setIvFilter}
             onSortOptionChange={setSortOption}
             onClearCaptured={handleClearCaptured}
           />
 
-          {/* Resumo do Scan */}
-          <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-            <span>
-              Exibindo <strong>{filteredPokemons.length}</strong> de{" "}
-              <strong>{allPokemons.length}</strong> shinys encontrados ({roundsExecuted} ciclos
-              de blacklist)
-            </span>
-            <span className="font-mono text-[11px] text-amber-400/80">
-              Raio: {radiusKm}km
-            </span>
-          </div>
-
-          {/* Grid de Cards */}
+          {/* Lista de Cards Compactos */}
           {filteredPokemons.length === 0 ? (
-            <div className="py-12 text-center rounded-3xl border border-slate-800/80 bg-slate-950/40 p-6">
-              <Sparkles className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-300">
-                Nenhum shiny corresponde aos filtros selecionados
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                Tente ajustar o IV mínimo, limpar a busca ou mudar para a aba &apos;Todos&apos;.
-              </p>
+            <div className="py-8 text-center rounded-2xl border border-[#27272a] bg-[#121214] p-4 text-xs text-zinc-400">
+              Nenhum Pokémon corresponde aos filtros ativos.
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">
+            <div className="space-y-2.5">
               {filteredPokemons.map((pokemon) => (
                 <ShinyCard
                   key={pokemon.encounter_id}
@@ -291,6 +300,7 @@ export default function Home() {
                   onToggleCaptured={toggleCaptured}
                   onRevealSuccess={handleRevealSuccess}
                   onRateLimited={(retry) => setCooldownSeconds(retry)}
+                  onToast={showToast}
                 />
               ))}
             </div>
@@ -298,20 +308,11 @@ export default function Home() {
         </div>
       )}
 
-      {/* Estado Vazio Inicial */}
-      {allPokemons.length === 0 && !isLoading && !errorMessage && (
-        <div className="mt-8 py-16 px-6 text-center rounded-3xl border border-slate-800/60 bg-gradient-to-b from-slate-950/60 to-[#07080f]/80 backdrop-blur-md">
-          <div className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-amber-500/20 via-purple-500/20 to-indigo-500/20 border border-purple-500/30 flex items-center justify-center mx-auto mb-4 shadow-xl shadow-purple-950/30">
-            <Radar className="w-8 h-8 text-amber-400" />
-          </div>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-100 tracking-tight">
-            Pronto para Iniciar a Varredura de Shinys
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mt-2 leading-relaxed">
-            Selecione uma localização no mapa, utilize seu GPS ou escolha Toronto/Zaragoza,
-            e clique no botão <strong>Escanear Shinys</strong> para romper o limite padrão e
-            listar dezenas de alvos em tempo real.
-          </p>
+      {/* Toast Notifier Flutuante no Rodapé */}
+      {toastMessage && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#18181b] border border-[#27272a] shadow-xl text-xs text-zinc-100 font-medium animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+          <span>{toastMessage}</span>
         </div>
       )}
     </main>

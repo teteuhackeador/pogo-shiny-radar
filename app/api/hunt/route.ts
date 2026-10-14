@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     const lat = parseFloat(body.lat);
     const lng = parseFloat(body.lng);
     const radiusKm = parseFloat(body.radiusKm || 50);
-    const targetCount = Math.min(parseInt(body.targetCount || 30, 10), 100);
+    const targetCount = Math.min(parseInt(body.targetCount || 30, 10), 60);
     const trainerCode = body.shinyAccount || DEFAULT_TRAINER_CODE;
     const authToken = body.token || DEFAULT_POGO_TOKEN;
 
@@ -23,88 +23,13 @@ export async function POST(req: NextRequest) {
 
     const allShinys = new Map<string, PokemonSpawn>();
     const blacklistPokemonIds: number[] = [];
-
-    // =========================================================================
-    // ETAPA 1: O BYPASS DE OURO VIA /map/lookup
-    // Coleta até 100 pokémons com COORDENADAS EXATAS REVELADAS (apx_lat, apx_long)
-    // Sem passar pelo limitador de /reveal e sem risco de HTTP 429!
-    // =========================================================================
-    try {
-      const deltaLat = radiusKm / 111.0;
-      const deltaLng = radiusKm / (111.0 * Math.max(0.1, Math.cos((lat * Math.PI) / 180.0)));
-
-      const mapPayload = {
-        mode: "pokemon",
-        n_lat: lat + deltaLat,
-        s_lat: lat - deltaLat,
-        w_lng: lng - deltaLng,
-        e_lng: lng + deltaLng,
-        filters: {
-          shiny_only: true,
-          shiny_account: trainerCode,
-          sort: "IV"
-        },
-        num_results: 100
-      };
-
-      const mapRes = await fetch(`${BASE_API_URL}/map/lookup`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${authToken}`
-        },
-        body: JSON.stringify(mapPayload)
-      });
-
-      if (mapRes.ok) {
-        const mapData = await mapRes.json();
-        const mapResults = mapData.results || [];
-        for (const p of mapResults) {
-          const coords = p.apx_lat && p.apx_long ? `${p.apx_lat},${p.apx_long}` : null;
-          const despawnIso = p.despawn_at_ms ? new Date(p.despawn_at_ms).toISOString() : new Date(Date.now() + 15 * 60 * 1000).toISOString();
-
-          allShinys.set(p.encounter_id, {
-            encounter_id: p.encounter_id,
-            pokemon_id: p.pokemon_id,
-            pokemon_name: p.pokemon_name,
-            form: p.form || null,
-            costume_id: null,
-            costume: p.costume || null,
-            cp: p.cp || 0,
-            level: p.level || 0,
-            location: p.location || `Coords: ${p.apx_lat?.toFixed(4)}, ${p.apx_long?.toFixed(4)}`,
-            raw_iv: p.raw_iv || "15/15/15",
-            iv_percent: p.iv_percent || 100,
-            gender: p.gender || "Genderless",
-            size: p.size || "M",
-            weather_boosted: false,
-            weather_id: 0,
-            fast_move: "—",
-            charge_move: "—",
-            despawn_at: despawnIso,
-            despawn_verified: !!p.despawn_verified,
-            reveal_code: p.reveal_code,
-            shiny: true,
-            background: false,
-            exact_coords: coords // COORDENADA JÁ REVELADA E PRONTA!
-          });
-
-          if (!blacklistPokemonIds.includes(p.pokemon_id)) {
-            blacklistPokemonIds.push(p.pokemon_id);
-          }
-        }
-      }
-    } catch (mapErr) {
-      console.warn("Aviso: /map/lookup falhou ou indisponível, seguindo para /search:", mapErr);
-    }
-
-    // =========================================================================
-    // ETAPA 2: COMPLEMENTO VIA /search COM BLACKLIST RECURSIVA
-    // Varridura de espécies adicionais para alcançar o targetCount
-    // =========================================================================
     let round = 1;
-    const maxRounds = 6;
+    const maxRounds = 8;
 
+    // Busca autêntica via /search com Blacklist Recursiva
+    // ATENÇÃO: Nunca usar apx_lat do /map/lookup porque o site introduz um desvio
+    // proposital de mais de 100 metros (apx = approximate) que faz o jogador errar o spawn!
+    // As coordenadas verdadeiras e exatas são obtidas exclusivamente via /reveal!
     while (allShinys.size < targetCount && round <= maxRounds) {
       const searchPayload = {
         shiny_only: true,
@@ -161,15 +86,10 @@ export async function POST(req: NextRequest) {
         if (!allShinys.has(p.encounter_id)) {
           allShinys.set(p.encounter_id, {
             ...p,
-            shiny: true
+            shiny: true,
+            exact_coords: null // Será revelado com precisão milimétrica via /reveal!
           });
           newInThisRound++;
-        } else {
-          // Se já tínhamos pelo map/lookup, enriquecemos com dados textuais de location e moves!
-          const existing = allShinys.get(p.encounter_id)!;
-          if (p.location) existing.location = p.location;
-          if (p.fast_move) existing.fast_move = p.fast_move;
-          if (p.charge_move) existing.charge_move = p.charge_move;
         }
 
         if (!blacklistPokemonIds.includes(p.pokemon_id)) {

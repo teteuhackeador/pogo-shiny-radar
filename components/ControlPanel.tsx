@@ -1,18 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { GEO_PRESETS, GeoPreset } from "@/lib/constants";
-import {
-  Navigation,
-  Crosshair,
-  Sliders,
-  Sparkles,
-  MapPin,
-  Loader2,
-  RefreshCw,
-  Compass,
-  Zap
-} from "lucide-react";
+import { Navigation, Loader2, Sparkles } from "lucide-react";
 
 interface ControlPanelProps {
   lat: number;
@@ -37,15 +27,26 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onTargetCountChange,
   onExecuteScan
 }) => {
-  const [latInput, setLatInput] = useState<string>(lat.toString());
-  const [lngInput, setLngInput] = useState<string>(lng.toString());
+  const [coordsInput, setCoordsInput] = useState<string>(`${lat},${lng}`);
   const [isGettingGps, setIsGettingGps] = useState<boolean>(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
 
-  // Manipulação de GPS do Navegador / Smartphone
+  // Sincroniza o input quando as coordenadas mudam externamente (ex: presets)
+  useEffect(() => {
+    setCoordsInput(`${lat},${lng}`);
+  }, [lat, lng]);
+
+  const handleCoordsInputChange = (val: string) => {
+    setCoordsInput(val);
+    const parts = val.split(",").map((s) => parseFloat(s.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      onCoordinatesChange(parts[0], parts[1]);
+    }
+  };
+
   const handleUseCurrentLocation = () => {
     if (!navigator.geolocation) {
-      setGpsError("Geolocalização não suportada neste dispositivo.");
+      setGpsError("GPS não suportado neste aparelho.");
       return;
     }
 
@@ -56,47 +57,42 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       (position) => {
         const userLat = parseFloat(position.coords.latitude.toFixed(7));
         const userLng = parseFloat(position.coords.longitude.toFixed(7));
-        setLatInput(userLat.toString());
-        setLngInput(userLng.toString());
+        const formatted = `${userLat},${userLng}`;
+        setCoordsInput(formatted);
         onCoordinatesChange(userLat, userLng);
         setIsGettingGps(false);
       },
-      (error) => {
+      () => {
         setIsGettingGps(false);
-        setGpsError("Permissão de GPS negada ou sinal indisponível.");
+        setGpsError("Sinal de GPS indisponível ou negado.");
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
   const handleApplyPreset = (preset: GeoPreset) => {
-    setLatInput(preset.lat.toString());
-    setLngInput(preset.lng.toString());
+    const formatted = `${preset.lat},${preset.lng}`;
+    setCoordsInput(formatted);
     onCoordinatesChange(preset.lat, preset.lng);
   };
 
-  const handleManualCoordSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedLat = parseFloat(latInput);
-    const parsedLng = parseFloat(lngInput);
-    if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
-      onCoordinatesChange(parsedLat, parsedLng);
+    const parts = coordsInput.split(",").map((s) => parseFloat(s.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      onCoordinatesChange(parts[0], parts[1]);
+      onExecuteScan();
     }
   };
 
   return (
-    <div className="bg-[#090b14]/90 border border-slate-800/80 rounded-3xl p-4 sm:p-5 backdrop-blur-xl shadow-2xl shadow-black/60">
-      {/* Linha Superior: Presets Rápidos */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
-            <Compass className="w-3.5 h-3.5 text-amber-400" />
-            Hotspots Recomendados
-          </span>
-          <span className="text-[11px] text-slate-400">Clique para teleportar</span>
+    <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-3.5 sm:p-4 shadow-sm text-zinc-100">
+      {/* Presets Rápidos */}
+      <div className="mb-3">
+        <div className="text-[11px] font-medium text-zinc-400 mb-1.5 flex items-center justify-between">
+          <span>Locais Rápidos</span>
         </div>
-
-        <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin no-scrollbar">
+        <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
           {GEO_PRESETS.map((preset) => {
             const isSelected =
               Math.abs(lat - preset.lat) < 0.001 && Math.abs(lng - preset.lng) < 0.001;
@@ -105,166 +101,128 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 key={preset.name}
                 type="button"
                 onClick={() => handleApplyPreset(preset)}
-                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
                   isSelected
-                    ? "bg-gradient-to-r from-amber-500/20 to-purple-500/20 border-amber-500/60 text-amber-300 shadow-sm"
-                    : "bg-slate-900/80 hover:bg-slate-800 text-slate-300 border-slate-800"
-                } border`}
+                    ? "bg-zinc-200 text-zinc-950 font-semibold"
+                    : "bg-[#18181b] text-zinc-300 hover:text-white border border-[#27272a]"
+                }`}
               >
-                <span>{preset.badge}</span>
-                <span className="font-semibold">{preset.name}</span>
+                {preset.name}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Formulário de Coordenadas */}
-      <form onSubmit={handleManualCoordSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+      {/* Formulário: Campo Único de Coordenadas + Botão GPS */}
+      <form onSubmit={handleFormSubmit} className="space-y-3">
         <div>
-          <label className="block text-[11px] font-medium text-slate-400 mb-1">
-            Latitude Central
+          <label className="block text-[11px] font-medium text-zinc-400 mb-1">
+            Coordenadas (Latitude, Longitude)
           </label>
-          <div className="relative">
+          <div className="flex items-center gap-2">
             <input
               type="text"
-              value={latInput}
-              onChange={(e) => {
-                setLatInput(e.target.value);
-                const val = parseFloat(e.target.value);
-                if (!isNaN(val)) onCoordinatesChange(val, lng);
-              }}
-              placeholder="ex: 43.5442968"
-              className="w-full bg-slate-950/80 border border-slate-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-100 placeholder-slate-400 outline-none transition-all"
+              value={coordsInput}
+              onChange={(e) => handleCoordsInputChange(e.target.value)}
+              placeholder="43.5442968,-79.7399437"
+              className="w-full bg-[#18181b] border border-[#27272a] focus:border-zinc-500 rounded-xl px-3 py-2 text-xs font-mono text-zinc-100 placeholder-zinc-500 outline-none transition-colors"
             />
-            <Crosshair className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={isGettingGps}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-[#18181b] hover:bg-[#202024] text-zinc-200 border border-[#27272a] transition-all active:scale-95"
+              title="Obter localização atual via GPS"
+            >
+              {isGettingGps ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+              ) : (
+                <Navigation className="w-3.5 h-3.5 text-zinc-300" />
+              )}
+              <span>GPS</span>
+            </button>
+          </div>
+          {gpsError && (
+            <p className="mt-1 text-[11px] text-rose-400 font-medium">{gpsError}</p>
+          )}
+        </div>
+
+        {/* Seletores Compactos: Raio e Alvos */}
+        <div className="grid grid-cols-2 gap-2.5 pt-1">
+          <div>
+            <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
+              <span>Raio</span>
+              <span className="font-mono text-zinc-200 font-semibold">{radiusKm}km</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              {[15, 30, 50, 100].map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => onRadiusChange(r)}
+                  className={`py-1 rounded-lg text-[11px] font-mono transition-colors ${
+                    radiusKm === r
+                      ? "bg-zinc-200 text-zinc-950 font-bold"
+                      : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
+              <span>Alvos</span>
+              <span className="font-mono text-zinc-200 font-semibold">{targetCount}</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1">
+              {[10, 20, 30, 50].map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => onTargetCountChange(c)}
+                  className={`py-1 rounded-lg text-[11px] font-mono transition-colors ${
+                    targetCount === c
+                      ? "bg-zinc-200 text-zinc-950 font-bold"
+                      : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
+                  }`}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div>
-          <label className="block text-[11px] font-medium text-slate-400 mb-1">
-            Longitude Central
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              value={lngInput}
-              onChange={(e) => {
-                setLngInput(e.target.value);
-                const val = parseFloat(e.target.value);
-                if (!isNaN(val)) onCoordinatesChange(lat, val);
-              }}
-              placeholder="ex: -79.7399437"
-              className="w-full bg-slate-950/80 border border-slate-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-100 placeholder-slate-400 outline-none transition-all"
-            />
-            <Crosshair className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
-          </div>
+        {/* Botão de Disparo do Scanner */}
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={onExecuteScan}
+            disabled={isLoading}
+            className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide flex items-center justify-center gap-2 transition-all active:scale-[0.99] ${
+              isLoading
+                ? "bg-zinc-800 text-zinc-400 border border-[#27272a] cursor-wait"
+                : "bg-zinc-100 hover:bg-white text-zinc-950 font-bold border border-zinc-200 shadow-sm"
+            }`}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
+                <span>Varrendo satélites...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5 text-zinc-900" />
+                <span>Escanear Shinys ({radiusKm}km)</span>
+              </>
+            )}
+          </button>
         </div>
       </form>
-
-      {/* Botão de Localização do Smartphone / GPS */}
-      <div className="mb-4 flex items-center justify-between flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={handleUseCurrentLocation}
-          disabled={isGettingGps}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/90 hover:bg-slate-800 text-purple-300 border border-purple-500/30 transition-all active:scale-95 shadow-sm"
-        >
-          {isGettingGps ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
-          ) : (
-            <Navigation className="w-3.5 h-3.5 text-purple-400" />
-          )}
-          <span>{isGettingGps ? "Triangulando GPS..." : "📍 Usar Meu GPS Atual"}</span>
-        </button>
-
-        {gpsError && (
-          <span className="text-[11px] text-rose-400 font-medium">{gpsError}</span>
-        )}
-      </div>
-
-      {/* Sliders / Opções de Raio e Meta de Shinys */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-800/80">
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-slate-300">
-              Raio de Varredura
-            </span>
-            <span className="text-xs font-mono font-bold text-amber-400">
-              {radiusKm} km
-            </span>
-          </div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {[15, 30, 60, 100].map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => onRadiusChange(r)}
-                className={`py-1.5 rounded-lg text-xs font-mono font-semibold transition-all ${
-                  radiusKm === r
-                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/50"
-                    : "bg-slate-900/60 text-slate-400 border border-slate-800 hover:text-slate-200"
-                }`}
-              >
-                {r}km
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-slate-300">
-              Meta de Shinys (Blacklist)
-            </span>
-            <span className="text-xs font-mono font-bold text-purple-400">
-              {targetCount} alvos
-            </span>
-          </div>
-          <div className="grid grid-cols-4 gap-1.5">
-            {[10, 20, 35, 50].map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => onTargetCountChange(c)}
-                className={`py-1.5 rounded-lg text-xs font-mono font-semibold transition-all ${
-                  targetCount === c
-                    ? "bg-purple-500/20 text-purple-300 border border-purple-500/50"
-                    : "bg-slate-900/60 text-slate-400 border border-slate-800 hover:text-slate-200"
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Botão de Disparo do Scanner */}
-      <div className="mt-5">
-        <button
-          type="button"
-          onClick={onExecuteScan}
-          disabled={isLoading}
-          className={`w-full py-3.5 px-6 rounded-2xl text-sm font-black uppercase tracking-wider flex items-center justify-center gap-2.5 transition-all shadow-xl active:scale-[0.99] ${
-            isLoading
-              ? "bg-slate-800 text-slate-400 border border-slate-700 cursor-wait"
-              : "bg-gradient-to-r from-amber-500 via-purple-600 to-indigo-600 hover:from-amber-400 hover:to-indigo-500 text-white shadow-purple-900/30 border border-amber-400/30 hover:shadow-purple-700/50"
-          }`}
-        >
-          {isLoading ? (
-            <>
-              <RefreshCw className="w-4 h-4 animate-spin text-amber-300" />
-              <span>Varrendo Satélites & Desviando Limites...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4 text-amber-300 fill-amber-300 animate-bounce" />
-              <span>Escanear Shinys no Raio ({radiusKm}km)</span>
-            </>
-          )}
-        </button>
-      </div>
     </div>
   );
 };

@@ -17,46 +17,46 @@ export interface GeoPreset {
 
 export const GEO_PRESETS: GeoPreset[] = [
   {
-    name: "Toronto / Mississauga",
-    badge: "🇨🇦 Home Base",
+    name: "Toronto",
+    badge: "Toronto",
     lat: 43.5442968,
     lng: -79.7399437,
-    description: "Base oficial do Mestre em Ontário"
+    description: "Mississauga / GTA"
   },
   {
     name: "Zaragoza",
-    badge: "🇪🇸 Mega Spawn",
+    badge: "Zaragoza",
     lat: 41.661130,
     lng: -0.893540,
-    description: "Maior cluster de PokéStops e spawns da Europa"
+    description: "Espanha"
   },
   {
-    name: "Pier 39 (San Francisco)",
-    badge: "🇺🇸 Hotspot",
+    name: "Pier 39",
+    badge: "SF",
     lat: 37.808600,
     lng: -122.409800,
-    description: "Clássico hotspot americano no píer marítimo"
+    description: "San Francisco"
   },
   {
-    name: "Parque Ibirapuera (SP)",
-    badge: "🇧🇷 Brasil",
+    name: "Ibirapuera",
+    badge: "SP",
     lat: -23.587416,
     lng: -46.657634,
-    description: "Principal ninho e centro comunitário de São Paulo"
+    description: "São Paulo"
   },
   {
-    name: "Shinjuku (Tóquio)",
-    badge: "🇯🇵 Japão",
+    name: "Shinjuku",
+    badge: "Tóquio",
     lat: 35.690022,
     lng: 139.700344,
-    description: "Densidade máxima de lures e raids no Japão"
+    description: "Japão"
   },
   {
-    name: "Sydney Circular Quay",
-    badge: "🇦🇺 Oceania",
+    name: "Sydney",
+    badge: "Sydney",
     lat: -33.856784,
     lng: 151.215297,
-    description: "Ópera de Sydney e orla australiana"
+    description: "Austrália"
   }
 ];
 
@@ -64,7 +64,6 @@ export const GEO_PRESETS: GeoPreset[] = [
  * Retorna a URL do sprite oficial de alta resolução para Pokémons Shiny
  */
 export function getPokemonSpriteUrl(pokemonId: number): string {
-  // Arte oficial de alta definição com fallback garantido
   return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${pokemonId}.png`;
 }
 
@@ -91,5 +90,5 @@ export function calculateDistanceKm(
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c * 100) / 100;
+  return Math.round(R * c * 10) / 10;
 }

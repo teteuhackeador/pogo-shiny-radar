@@ -13,13 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PoGo Shiny Radar | VIP Aristocrático",
-  description:
-    "Radar avançado de Pokémon GO Shiny com Blacklist Recursiva, Lazy Reveal de coordenadas e rastreador de capturas para celular.",
+  title: "PoGo Shiny Radar",
+  description: "Radar de Pokémon GO Shiny com coordenadas exatas e rastreador de capturas para celular.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "PoGo Radar"
+    title: "Shiny Radar"
   }
 };
 
@@ -28,7 +27,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
-  themeColor: "#05060a"
+  themeColor: "#09090b"
 };
 
 export default function RootLayout({
@@ -41,7 +40,7 @@ export default function RootLayout({
       lang="pt-BR"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
     >
-      <body className="min-h-full flex flex-col bg-[#05060a] text-slate-100 font-sans selection:bg-purple-600 selection:text-white">
+      <body className="min-h-full flex flex-col bg-[#09090b] text-zinc-100 font-sans selection:bg-zinc-800 selection:text-white overflow-x-hidden">
         {children}
       </body>
     </html>

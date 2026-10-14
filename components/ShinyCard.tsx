@@ -4,19 +4,14 @@ import React, { useState, useEffect } from "react";
 import { PokemonSpawn } from "@/types/pokemon";
 import { getPokemonSpriteUrl, getPokemonFallbackSprite } from "@/lib/constants";
 import {
-  Sparkles,
-  MapPin,
   Clock,
-  Shield,
-  Zap,
-  Swords,
   Copy,
   ExternalLink,
-  CheckCircle2,
-  Compass,
-  AlertTriangle,
+  Check,
   Loader2,
-  Check
+  CheckSquare,
+  Square,
+  MapPin
 } from "lucide-react";
 
 interface ShinyCardProps {
@@ -27,6 +22,7 @@ interface ShinyCardProps {
   onToggleCaptured: (encounterId: string) => void;
   onRevealSuccess: (encounterId: string, coords: string) => void;
   onRateLimited: (retryAfter: number) => void;
+  onToast?: (message: string) => void;
 }
 
 export const ShinyCard: React.FC<ShinyCardProps> = ({
@@ -36,7 +32,8 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
   revealedCoords,
   onToggleCaptured,
   onRevealSuccess,
-  onRateLimited
+  onRateLimited,
+  onToast
 }) => {
   const [imgSrc, setImgSrc] = useState<string>(getPokemonSpriteUrl(pokemon.pokemon_id));
   const [copied, setCopied] = useState<boolean>(false);
@@ -44,7 +41,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
   const [revealError, setRevealError] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<string>("");
   const [isExpired, setIsExpired] = useState<boolean>(false);
-  const [secondsUntilDespawn, setSecondsUntilDespawn] = useState<number>(9999);
+  const [isCriticalTime, setIsCriticalTime] = useState<boolean>(false);
 
   const exactCoords = revealedCoords || pokemon.exact_coords;
 
@@ -58,14 +55,14 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
       const diffMs = despawnTime - now;
 
       if (diffMs <= 0) {
-        setTimeLeft("Despawnou");
+        setTimeLeft("Expirado");
         setIsExpired(true);
-        setSecondsUntilDespawn(0);
+        setIsCriticalTime(false);
         return;
       }
 
       const totalSec = Math.floor(diffMs / 1000);
-      setSecondsUntilDespawn(totalSec);
+      setIsCriticalTime(totalSec <= 180);
       const minutes = Math.floor(totalSec / 60);
       const seconds = totalSec % 60;
       setTimeLeft(`${minutes}m ${seconds.toString().padStart(2, "0")}s`);
@@ -76,9 +73,10 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
     return () => clearInterval(interval);
   }, [pokemon.despawn_at]);
 
-  // Função para revelar coordenadas sob demanda
-  const handleReveal = async () => {
-    if (exactCoords || revealing || !pokemon.reveal_code) return;
+  // Revela e retorna a coordenada exata
+  const fetchExactCoords = async (): Promise<string | null> => {
+    if (exactCoords) return exactCoords;
+    if (!pokemon.reveal_code) return null;
 
     setRevealing(true);
     setRevealError(null);
@@ -87,278 +85,230 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
       const res = await fetch("/api/reveal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reveal_code: pokemon.reveal_code, encounter_id: pokemon.encounter_id })
+        body: JSON.stringify({
+          reveal_code: pokemon.reveal_code,
+          encounter_id: pokemon.encounter_id
+        })
       });
 
       const data = await res.json();
 
       if (res.status === 429 || data.error === "rate_limited") {
-        const retryAfter = data.retry_after || 180;
-        setRevealError(`Cota excedida: aguarde ${retryAfter}s`);
-        onRateLimited(retryAfter);
-        return;
+        const retry = data.retry_after || 180;
+        setRevealError(`Cota atingida (${retry}s)`);
+        onRateLimited(retry);
+        return null;
       }
 
       if (data.success && data.coords) {
         onRevealSuccess(pokemon.encounter_id, data.coords);
+        return data.coords;
       } else {
-        setRevealError(data.message || "Não foi possível obter coordenadas.");
+        setRevealError("Falha ao obter coordenadas.");
+        return null;
       }
-    } catch (e: any) {
-      setRevealError("Erro de conexão ao revelar.");
+    } catch {
+      setRevealError("Erro de conexão.");
+      return null;
     } finally {
       setRevealing(false);
     }
   };
 
+  // Botão Copiar Coords: obtém a coordenada exata verdadeira e copia pro clipboard
   const handleCopyCoords = async () => {
-    if (!exactCoords) return;
+    let coordsToCopy = exactCoords;
+
+    if (!coordsToCopy) {
+      coordsToCopy = await fetchExactCoords();
+    }
+
+    if (!coordsToCopy) return;
+
     try {
-      await navigator.clipboard.writeText(exactCoords);
+      await navigator.clipboard.writeText(coordsToCopy);
       setCopied(true);
+      if (onToast) onToast(`Copiado: ${coordsToCopy}`);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      // Fallback para input manual
+    } catch {
+      if (onToast) onToast("Erro ao copiar para a área de transferência.");
     }
   };
 
+  // Botão Maps: abre diretamente no Google Maps com a coordenada verdadeira
+  const handleOpenMaps = async () => {
+    let coordsToOpen = exactCoords;
+
+    if (!coordsToOpen) {
+      coordsToOpen = await fetchExactCoords();
+    }
+
+    if (!coordsToOpen) return;
+
+    window.open(
+      `https://www.google.com/maps?q=${encodeURIComponent(coordsToOpen)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
   const isShundo = pokemon.iv_percent === 100;
-  const isHighIv = pokemon.iv_percent >= 90;
 
   return (
     <div
-      className={`relative rounded-2xl border transition-all duration-300 backdrop-blur-md overflow-hidden ${
+      className={`rounded-2xl border transition-all text-zinc-100 p-3 sm:p-3.5 ${
         isCaptured
-          ? "bg-[#0b0c13]/70 border-emerald-950/40 opacity-55 grayscale-[20%]"
+          ? "bg-[#0e0e11] border-[#27272a]/60 opacity-50"
           : isShundo
-          ? "bg-gradient-to-b from-[#1c1402] via-[#0d0e17] to-[#07080d] border-amber-500/80 shadow-[0_0_25px_rgba(245,158,11,0.25)] hover:border-amber-400"
-          : isHighIv
-          ? "bg-gradient-to-b from-[#130b1c] via-[#0d0e17] to-[#07080d] border-purple-500/50 shadow-[0_0_20px_rgba(168,85,247,0.15)] hover:border-purple-400"
-          : "bg-[#0a0c14]/90 border-slate-800/80 hover:border-slate-700 hover:shadow-lg shadow-black/40"
+          ? "bg-[#14130e] border-amber-600/40"
+          : "bg-[#121214] border-[#27272a]"
       }`}
     >
-      {/* Top Header do Card: Badges e Status de Captura */}
-      <div className="flex items-center justify-between p-3.5 pb-2">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Badge Shiny */}
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-gradient-to-r from-amber-500/20 to-purple-500/20 text-amber-300 border border-amber-500/40 shadow-sm animate-pulse">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-            SHINY
-          </span>
-
-          {/* Badge Shundo / 100% */}
-          {isShundo && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-gradient-to-r from-amber-500 to-yellow-300 text-black border border-yellow-200 shadow-md">
-              👑 SHUNDO 100%
+      {/* Linha Superior: Nome, Stats Básicos e Botão Peguei */}
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h3 className="text-sm font-semibold text-zinc-100 truncate">
+              {pokemon.pokemon_name}
+            </h3>
+            {isShundo && (
+              <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                100%
+              </span>
+            )}
+            <span className="text-[11px] font-mono text-zinc-400">
+              Nv. {pokemon.level}
             </span>
-          )}
+          </div>
 
-          {/* Badge IV Alto */}
-          {!isShundo && isHighIv && (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-              ⚡ IV {pokemon.iv_percent}%
+          <div className="flex items-center gap-2 mt-0.5 text-xs font-mono">
+            <span className="font-semibold text-zinc-200">
+              CP {pokemon.cp}
             </span>
-          )}
-
-          {/* Nível do Pokémon */}
-          <span className="text-[11px] font-medium text-slate-400 bg-slate-900/80 px-2 py-0.5 rounded-md border border-slate-800">
-            Nv. {pokemon.level}
-          </span>
+            <span className="text-zinc-500">•</span>
+            <span
+              className={
+                isShundo
+                  ? "text-amber-400 font-bold"
+                  : pokemon.iv_percent >= 90
+                  ? "text-emerald-400 font-medium"
+                  : "text-zinc-300"
+              }
+            >
+              IV {pokemon.iv_percent}%
+            </span>
+            <span className="text-zinc-500 text-[10px]">
+              ({pokemon.raw_iv})
+            </span>
+          </div>
         </div>
 
-        {/* Botão de Já Capturei / Capturado */}
+        {/* Botão/Checkbox "Peguei" */}
         <button
+          type="button"
           onClick={() => onToggleCaptured(pokemon.encounter_id)}
-          title={isCaptured ? "Marcar como pendente" : "Marcar como capturado"}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold transition-all active:scale-95 ${
+          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
             isCaptured
-              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 shadow-sm"
-              : "bg-slate-800/70 hover:bg-slate-700/80 text-slate-300 border border-slate-700"
+              ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/60"
+              : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
           }`}
+          title={isCaptured ? "Marcar como não capturado" : "Marcar como capturado"}
         >
-          <CheckCircle2
-            className={`w-3.5 h-3.5 ${
-              isCaptured ? "text-emerald-400 fill-emerald-400/20" : "text-slate-400"
-            }`}
-          />
-          {isCaptured ? "Capturado" : "Já Peguei"}
+          {isCaptured ? (
+            <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+          ) : (
+            <Square className="w-3.5 h-3.5 text-zinc-500" />
+          )}
+          <span>{isCaptured ? "Peguei" : "Peguei"}</span>
         </button>
       </div>
 
-      {/* Conteúdo Principal: Imagem e Dados de Combate */}
-      <div className="px-4 py-3 flex gap-4 items-center">
-        {/* Sprite Shiny com aura */}
-        <div className="relative w-24 h-24 flex-shrink-0 flex items-center justify-center rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950 border border-slate-800/80 shadow-inner group">
-          <div
-            className={`absolute inset-0 rounded-2xl filter blur-md opacity-25 ${
-              isShundo ? "bg-amber-400" : "bg-purple-500"
-            }`}
-          />
+      {/* Linha Central: Sprite + Detalhes de Despawn e Localização */}
+      <div className="flex items-center gap-3 py-1">
+        {/* Sprite */}
+        <div className="relative w-14 h-14 flex-shrink-0 flex items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imgSrc}
             alt={pokemon.pokemon_name}
             onError={() => setImgSrc(getPokemonFallbackSprite(pokemon.pokemon_id))}
-            className="relative z-10 w-20 h-20 object-contain drop-shadow-[0_8px_10px_rgba(0,0,0,0.6)] transform group-hover:scale-110 transition-transform duration-300"
+            className="w-12 h-12 object-contain"
             loading="lazy"
           />
-          <span className="absolute bottom-1 right-2 text-[10px] text-slate-400 font-mono">
-            #{pokemon.pokemon_id}
-          </span>
         </div>
 
-        {/* Informações Numéricas e Nome */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline justify-between gap-1">
-            <h3 className="text-lg font-bold text-slate-100 truncate tracking-wide">
-              {pokemon.pokemon_name}
-            </h3>
-            <span className="text-xs font-mono text-amber-400/90 font-bold">
-              CP {pokemon.cp}
-            </span>
-          </div>
-
-          {/* Barra de IV e Porcentagem */}
-          <div className="mt-1.5 flex items-center gap-2">
-            <div className="flex-1 bg-slate-950/80 h-2 rounded-full overflow-hidden border border-slate-800/80 p-[1px]">
-              <div
-                className={`h-full rounded-full transition-all duration-500 ${
-                  isShundo
-                    ? "bg-gradient-to-r from-amber-400 to-yellow-300 shadow-[0_0_8px_#f59e0b]"
-                    : pokemon.iv_percent >= 80
-                    ? "bg-gradient-to-r from-purple-500 to-pink-500"
-                    : "bg-slate-600"
-                }`}
-                style={{ width: `${Math.min(pokemon.iv_percent, 100)}%` }}
-              />
-            </div>
+        {/* Metadados: Tempo restante e Local */}
+        <div className="flex-1 min-w-0 text-xs">
+          <div className="flex items-center gap-1.5 mb-1 font-mono">
+            <Clock className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
             <span
-              className={`text-xs font-mono font-bold ${
-                isShundo ? "text-amber-300" : isHighIv ? "text-purple-300" : "text-slate-400"
-              }`}
+              className={
+                isExpired
+                  ? "text-rose-400"
+                  : isCriticalTime
+                  ? "text-amber-400 font-semibold"
+                  : "text-zinc-300"
+              }
             >
-              {pokemon.iv_percent}%
-            </span>
-            <span className="text-[10px] font-mono text-slate-400">
-              ({pokemon.raw_iv})
+              {timeLeft ? `${timeLeft} restando` : "Calculando..."}
             </span>
           </div>
 
-          {/* Ataques (Moveset) */}
-          <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400 truncate">
-            <div className="flex items-center gap-1 truncate">
-              <Zap className="w-3 h-3 text-amber-400 flex-shrink-0" />
-              <span className="truncate">{pokemon.fast_move || "Fast"}</span>
-            </div>
-            <span>•</span>
-            <div className="flex items-center gap-1 truncate">
-              <Swords className="w-3 h-3 text-purple-400 flex-shrink-0" />
-              <span className="truncate">{pokemon.charge_move || "Charge"}</span>
-            </div>
+          <div className="flex items-center gap-1 text-[11px] text-zinc-400 truncate">
+            <MapPin className="w-3 h-3 text-zinc-500 flex-shrink-0" />
+            <span className="truncate">{pokemon.location || "Localização informada"}</span>
           </div>
         </div>
       </div>
 
-      {/* Localização e Temporizador de Despawn */}
-      <div className="px-4 py-2 border-t border-slate-900/90 bg-slate-950/40 flex items-center justify-between text-xs text-slate-400">
-        <div className="flex items-center gap-1.5 min-w-0 pr-2">
-          <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-          <span className="truncate font-medium">{pokemon.location || "Região desconhecida"}</span>
-        </div>
+      {/* Erro de Revelação, se houver */}
+      {revealError && (
+        <p className="mt-1 text-center text-[11px] text-amber-400 font-medium">
+          {revealError}
+        </p>
+      )}
 
-        <div
-          className={`flex items-center gap-1 flex-shrink-0 font-mono text-xs font-medium px-2 py-0.5 rounded-md ${
-            isExpired
-              ? "bg-rose-950/40 text-rose-400 border border-rose-900/50"
-              : secondsUntilDespawn <= 180
-              ? "bg-amber-950/40 text-amber-400 border border-amber-900/50 animate-pulse"
-              : "bg-slate-900/60 text-slate-300 border border-slate-800"
+      {/* Linha Inferior: Botões de Ação para o Polegar */}
+      <div className="grid grid-cols-2 gap-2 mt-2.5 pt-2 border-t border-[#27272a]">
+        {/* Botão Copiar Coords */}
+        <button
+          type="button"
+          onClick={handleCopyCoords}
+          disabled={revealing || isExpired}
+          className={`h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+            copied
+              ? "bg-emerald-600 text-white"
+              : "bg-[#18181b] hover:bg-[#222226] text-zinc-100 border border-[#27272a]"
           }`}
         >
-          <Clock className="w-3 h-3" />
-          <span>{timeLeft || "Calculando..."}</span>
-        </div>
-      </div>
+          {revealing ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+              <span>Obtendo...</span>
+            </>
+          ) : copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 text-white" />
+              <span>Copiado!</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5 text-zinc-300" />
+              <span>Copiar Coords</span>
+            </>
+          )}
+        </button>
 
-      {/* Área de Ação: Revelar ou Coordenadas Prontas */}
-      <div className="p-3 bg-gradient-to-t from-slate-950 via-slate-950/80 to-slate-950/40 border-t border-slate-800/80">
-        {!exactCoords ? (
-          <div>
-            <button
-              onClick={handleReveal}
-              disabled={revealing || isExpired}
-              className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
-                isExpired
-                  ? "bg-slate-900 text-slate-400 border border-slate-800 cursor-not-allowed"
-                  : "bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-md shadow-violet-900/30 hover:shadow-violet-700/50 border border-violet-400/30"
-              }`}
-            >
-              {revealing ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                  <span>Obtendo Coordenadas no Satélite...</span>
-                </>
-              ) : (
-                <>
-                  <Compass className="w-4 h-4 text-amber-300" />
-                  <span>Revelar Coordenadas Exatas</span>
-                </>
-              )}
-            </button>
-            {revealError && (
-              <p className="mt-1.5 text-center text-[11px] text-amber-400 font-medium flex items-center justify-center gap-1">
-                <AlertTriangle className="w-3 h-3 text-amber-400" />
-                {revealError}
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-black/60 border border-slate-800">
-              <span className="text-[11px] font-mono text-slate-300 select-all font-semibold">
-                📍 {exactCoords}
-              </span>
-              <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">
-                Verificado ✓
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              {/* Botão Copiar */}
-              <button
-                onClick={handleCopyCoords}
-                className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
-                  copied
-                    ? "bg-emerald-600 text-white shadow-md shadow-emerald-900/40"
-                    : "bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700"
-                }`}
-              >
-                {copied ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-white" />
-                    <span>Copiado!</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Copiar Coords</span>
-                  </>
-                )}
-              </button>
-
-              {/* Botão Google Maps */}
-              <a
-                href={`https://www.google.com/maps?q=${exactCoords}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-md shadow-blue-900/30 border border-blue-400/20 active:scale-95 transition-all"
-              >
-                <ExternalLink className="w-3.5 h-3.5 text-white" />
-                <span>Google Maps</span>
-              </a>
-            </div>
-          </div>
-        )}
+        {/* Botão Google Maps */}
+        <button
+          type="button"
+          onClick={handleOpenMaps}
+          disabled={revealing || isExpired}
+          className="h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-[#18181b] hover:bg-[#222226] text-zinc-100 border border-[#27272a] transition-all active:scale-95"
+        >
+          <ExternalLink className="w-3.5 h-3.5 text-zinc-300" />
+          <span>Maps</span>
+        </button>
       </div>
     </div>
   );
