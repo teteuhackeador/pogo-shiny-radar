@@ -53,8 +53,8 @@ export async function POST(req: NextRequest) {
       const deltaLat = radiusKm / 111.0;
       const deltaLng = radiusKm / (111.0 * Math.max(0.1, Math.cos((lat * Math.PI) / 180.0)));
 
-      // Divisão em 4 quadrantes para maximizar cobertura sem bater no teto de 100 por caixa
       const tiles = [
+        { name: "CTR", n: lat + deltaLat / 2, s: lat - deltaLat / 2, w: lng - deltaLng / 2, e: lng + deltaLng / 2 },
         { name: "NE", n: lat + deltaLat, s: lat, w: lng, e: lng + deltaLng },
         { name: "NW", n: lat + deltaLat, s: lat, w: lng - deltaLng, e: lng },
         { name: "SE", n: lat, s: lat - deltaLat, w: lng, e: lng + deltaLng },
@@ -76,16 +76,21 @@ export async function POST(req: NextRequest) {
               filters: {
                 shiny_only: true,
                 shiny_account: trainerCode,
-                sort: "DIST"
+                sort: "IV"
               },
               num_results: 100
             })
           });
 
-          if (!res.ok) return [];
+          if (!res.ok) {
+            const errText = await res.text();
+            console.warn(`Aviso /map/lookup [${t.name}]: HTTP ${res.status} - ${errText}`);
+            return [];
+          }
           const data = await res.json();
           return data.results || [];
-        } catch {
+        } catch (err) {
+          console.warn(`Erro na requisição /map/lookup [${t.name}]:`, err);
           return [];
         }
       });
