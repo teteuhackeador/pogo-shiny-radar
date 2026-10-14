@@ -186,7 +186,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
     );
   };
 
-  const isShundo = pokemon.iv_percent === 100;
+  const isShundo = pokemon.shiny && pokemon.iv_percent === 100 && pokemon.raw_iv === "15/15/15";
 
   return (
     <div
@@ -206,20 +206,14 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
               {pokemon.pokemon_name}
             </h3>
             {isShundo ? (
-              <span
-                className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 ${
-                  pokemon.shiny
-                    ? "bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm"
-                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                }`}
-              >
-                {pokemon.shiny ? "✨ SHUNDO CONFIRMADO" : "💎 100% IV (HUNDO)"}
+              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm">
+                ✨ SHUNDO (15/15/15)
               </span>
-            ) : pokemon.shiny && pokemon.iv_percent >= 90 ? (
-              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-amber-500/15 text-amber-300 border-amber-500/30">
+            ) : (
+              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-zinc-800 text-amber-300 border-zinc-700">
                 ✨ SHINY {pokemon.iv_percent}%
               </span>
-            ) : null}
+            )}
             <span className="text-[11px] font-mono text-zinc-400">
               Nv. {pokemon.level}
             </span>

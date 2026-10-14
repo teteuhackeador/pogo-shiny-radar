@@ -239,17 +239,9 @@ export default function Home() {
 
       let countMsg = `${results.length} shinys encontrados.`;
       if (activeMode === "shundo_local") {
-        const shundos = results.filter((p) => p.shiny && p.iv_percent === 100).length;
-        const hundos = results.filter((p) => !p.shiny && p.iv_percent === 100).length;
-        if (shundos > 0) {
-          countMsg = `${shundos} Shundo(s) ✨ e ${hundos} Hundos 100% IV no raio de ${activeRadius}km!`;
-        } else {
-          countMsg = `0 Shundos puros no raio. Exibindo ${results.length} Hundos 100% IV e Shinys locais!`;
-        }
+        countMsg = `${results.length} Shundo(s) (15/15/15) encontrados no raio de ${activeRadius}km!`;
       } else if (activeMode === "shundo_global") {
-        const shundos = results.filter((p) => p.shiny && p.iv_percent === 100).length;
-        const hundos = results.filter((p) => !p.shiny && p.iv_percent === 100).length;
-        countMsg = `${shundos} Shundos confirmados ✨ e ${hundos} Hundos 100% IV no mundo!`;
+        countMsg = `${results.length} Shundo(s) (15/15/15) confirmados no mundo!`;
       }
       showToast(countMsg);
     } catch (err: any) {
@@ -281,6 +273,9 @@ export default function Home() {
       .filter((p) => {
         const isCap = capturedIds.has(p.encounter_id);
 
+        // REGRA DE OURO: SE NÃO FOR SHINY, NUNCA PASSA!
+        if (!p.shiny) return false;
+
         // Ocultar automaticamente os que já sumiram / expiraram
         if (p.despawn_at && currentTime > 0) {
           const despawnMs = new Date(p.despawn_at).getTime();
@@ -301,28 +296,27 @@ export default function Home() {
           if (!matchName && !matchLoc) return false;
         }
 
+        // SE O MODO FOR SHUNDO (LOCAL OU GLOBAL): EXATAMENTE 100% IV (15/15/15)!
+        if (huntMode === "shundo_local" || huntMode === "shundo_global") {
+          if (p.iv_percent !== 100 || p.raw_iv !== "15/15/15") return false;
+        }
+
         // Filtro por IV no modo normal local_shiny
         if (huntMode === "local_shiny") {
           if (ivFilter === "50" && p.iv_percent < 50) return false;
           if (ivFilter === "80" && p.iv_percent < 80) return false;
           if (ivFilter === "90" && p.iv_percent < 90) return false;
-          if (ivFilter === "100" && p.iv_percent < 100) return false;
+          if (ivFilter === "100" && (p.iv_percent !== 100 || p.raw_iv !== "15/15/15")) return false;
         }
 
         return true;
       })
       .sort((a, b) => {
-        // Shundos confirmados (shiny: true && iv: 100) SEMPRE têm prioridade absoluta no topo
-        const aIsConfirmedShundo = a.shiny && a.iv_percent === 100;
-        const bIsConfirmedShundo = b.shiny && b.iv_percent === 100;
-        if (aIsConfirmedShundo && !bIsConfirmedShundo) return -1;
-        if (!aIsConfirmedShundo && bIsConfirmedShundo) return 1;
-
-        // 100% IV Hundos vêm logo em seguida
-        const aIsHundo = a.iv_percent === 100;
-        const bIsHundo = b.iv_percent === 100;
-        if (aIsHundo && !bIsHundo) return -1;
-        if (!aIsHundo && bIsHundo) return 1;
+        // Shundos (15/15/15 + Shiny) sempre no topo
+        const aIsShundo = a.shiny && a.iv_percent === 100 && a.raw_iv === "15/15/15";
+        const bIsShundo = b.shiny && b.iv_percent === 100 && b.raw_iv === "15/15/15";
+        if (aIsShundo && !bIsShundo) return -1;
+        if (!aIsShundo && bIsShundo) return 1;
 
         if (sortOption === "distance") {
           const getDist = (p: PokemonSpawn): number => {
