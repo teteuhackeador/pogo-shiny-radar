@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const targetCount = Math.min(parseInt(body.targetCount || 100, 10), 150);
     const trainerCode = body.shinyAccount || DEFAULT_TRAINER_CODE;
     const isGlobal = !!body.isGlobal || !!body.shundoGlobal;
-    const shundoOnly = !!body.shundoOnly || !!body.shundoGlobal;
+    const onlyConfirmedShiny = !!body.onlyConfirmedShiny;
     const hiddenSpecies: string[] = Array.isArray(body.hiddenSpecies) ? body.hiddenSpecies : [];
 
     const allShinys = new Map<string, PokemonSpawn>();
@@ -40,20 +40,34 @@ export async function POST(req: NextRequest) {
     let totalQueries = 0;
 
     // =========================================================================
-    // MODO ESPECIAL: SHUNDO GLOBAL / ÁREA INFINITA (100% IV Mundial)
+    // MODO ESPECIAL: 100% IV GLOBAL (Hundo & Shundo Sniper Mundial)
     // =========================================================================
-    if (isGlobal || shundoOnly) {
-      const blacklistIds: number[] = [];
-      const maxRounds = 8; // Até 8 rodadas x 10 resultados = até 80 Shundos diferentes
-
-      for (let round = 0; round < maxRounds && allShinys.size < targetCount; round++) {
+    if (isGlobal) {
+      // 1. Feeds Especializados de 100% IV ao Redor do Globo em Paralelo
+      const feedSlugs = ["high-cp-100iv", "rare-100iv", "regional-100iv", "level-35-100iv"];
+      const feedPromises = feedSlugs.map(async (slug, idx) => {
         totalQueries++;
-        const currentToken = POGO_TOKENS[round % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+        const token = POGO_TOKENS[idx % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+        try {
+          const res = await fetch(`${BASE_API_URL}/feeds/${slug}`, {
+            headers: getRandomSpoofedHeaders(token)
+          });
+          if (!res.ok) return [];
+          const data = await res.json();
+          return data.results || [];
+        } catch {
+          return [];
+        }
+      });
 
+      // 2. Busca Dedicada de Shundos Confirmados para a Conta do Jogador
+      const confirmedShinyPromise = (async () => {
+        totalQueries++;
+        const token = POGO_TOKENS[0] || DEFAULT_POGO_TOKEN;
         try {
           const res = await fetch(`${BASE_API_URL}/search`, {
             method: "POST",
-            headers: getRandomSpoofedHeaders(currentToken),
+            headers: getRandomSpoofedHeaders(token),
             body: JSON.stringify({
               shiny_only: true,
               shiny_account: trainerCode,
@@ -62,43 +76,50 @@ export async function POST(req: NextRequest) {
               raw_iv_atk: 15,
               raw_iv_def: 15,
               raw_iv_sta: 15,
-              sort: "DSP",
-              blacklist_pokemon_ids: blacklistIds
+              sort: "DSP"
             })
           });
-
-          if (!res.ok) {
-            console.warn(`Aviso /search Shundo Global [Rodada ${round + 1}]: HTTP ${res.status}`);
-            break;
-          }
-
+          if (!res.ok) return [];
           const data = await res.json();
-          const results: any[] = data.results || [];
-          if (results.length === 0) break;
+          return (data.results || []).map((p: any) => ({ ...p, shiny: true }));
+        } catch {
+          return [];
+        }
+      })();
 
-          let foundShundoThisRound = 0;
+      // 3. Execução Concorrente dos Feeds e dos Shundos Confirmados
+      const [feedResultsArrays, confirmedShinys] = await Promise.all([
+        Promise.all(feedPromises),
+        confirmedShinyPromise
+      ]);
 
-          for (const p of results) {
-            // Trava estrita de SHUNDO: descarta terminantemente qualquer Pokémon abaixo de 100% (ex: 97.8%)
-            const isTrueShundo = p.iv_percent === 100 || p.raw_iv === "15/15/15";
-            if (!isTrueShundo) continue;
+      // Cadastra primeiro os Shundos confirmados
+      for (const p of confirmedShinys) {
+        if (p.iv_percent !== 100 && p.raw_iv !== "15/15/15") continue;
+        if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+        if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
-            // Descartar expirados
-            if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+        const dist =
+          p.apx_lat != null && p.apx_long != null && !isNaN(lat) && !isNaN(lng)
+            ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
+            : null;
 
-            // Alimenta a blacklist para a próxima rodada trazer espécies novas
-            if (p.pokemon_id && !blacklistIds.includes(p.pokemon_id)) {
-              blacklistIds.push(p.pokemon_id);
-            }
+        allShinys.set(p.encounter_id, {
+          ...p,
+          shiny: true,
+          exact_coords: null,
+          distance_km: dist
+        });
+      }
 
-            // Se o usuário ocultou essa espécie, não adiciona aos resultados da tela
-            if (hiddenSpecies.includes(p.pokemon_name)) continue;
+      // Cadastra os resultados dos feeds 100IV mundiais
+      for (const batch of feedResultsArrays) {
+        for (const p of batch) {
+          if (p.iv_percent !== 100 && p.raw_iv !== "15/15/15") continue;
+          if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+          if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
-            if (allShinys.has(p.encounter_id)) continue;
-
-            foundShundoThisRound++;
-
-            // Se coordenadas de referência foram passadas, calcula a distância até o país/cidade
+          if (!allShinys.has(p.encounter_id)) {
             const dist =
               p.apx_lat != null && p.apx_long != null && !isNaN(lat) && !isNaN(lng)
                 ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
@@ -106,32 +127,100 @@ export async function POST(req: NextRequest) {
 
             allShinys.set(p.encounter_id, {
               ...p,
-              shiny: true,
+              shiny: !!p.shiny,
               exact_coords: null,
               distance_km: dist
             });
           }
-
-          // Se a API não retornou nenhum 100% puro nesta rodada, encerra o ciclo
-          if (foundShundoThisRound === 0) break;
-        } catch (err) {
-          console.warn(`Erro na rodada ${round + 1} de Shundo Global:`, err);
-          break;
         }
       }
 
-      const finalList = Array.from(allShinys.values())
-        .filter((p) => {
-          if (!p.despawn_at) return true;
-          return new Date(p.despawn_at).getTime() > now;
-        })
-        .slice(0, targetCount);
+      // 4. Varredura Massiva no /search em Múltiplos Critérios (DSP, CP, LEVEL)
+      const sorts = ["DSP", "CP", "LEVEL"];
+      for (const sort of sorts) {
+        if (allShinys.size >= targetCount) break;
+
+        let blacklist: number[] = [];
+        for (let r = 0; r < 3; r++) {
+          totalQueries++;
+          const currentToken = POGO_TOKENS[(r + totalQueries) % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+
+          try {
+            const res = await fetch(`${BASE_API_URL}/search`, {
+              method: "POST",
+              headers: getRandomSpoofedHeaders(currentToken),
+              body: JSON.stringify({
+                shiny_only: false,
+                shiny_account: trainerCode,
+                iv_mode: "percent",
+                iv_percent_min: 100,
+                raw_iv_atk: 15,
+                raw_iv_def: 15,
+                raw_iv_sta: 15,
+                sort: sort,
+                blacklist_pokemon_ids: blacklist
+              })
+            });
+
+            if (!res.ok) break;
+            const data = await res.json();
+            const list: any[] = (data.results || []).filter(
+              (p: any) => p.iv_percent === 100 || p.raw_iv === "15/15/15"
+            );
+            if (list.length === 0) break;
+
+            for (const p of list) {
+              if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+              if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+              if (p.pokemon_id && !blacklist.includes(p.pokemon_id)) {
+                blacklist.push(p.pokemon_id);
+              }
+
+              if (!allShinys.has(p.encounter_id)) {
+                const dist =
+                  p.apx_lat != null && p.apx_long != null && !isNaN(lat) && !isNaN(lng)
+                    ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
+                    : null;
+
+                allShinys.set(p.encounter_id, {
+                  ...p,
+                  shiny: !!p.shiny,
+                  exact_coords: null,
+                  distance_km: dist
+                });
+              }
+            }
+          } catch {
+            break;
+          }
+        }
+      }
+
+      // Filtra e Ordena a Lista Global
+      let finalList = Array.from(allShinys.values()).filter((p) => {
+        if (p.iv_percent !== 100 && p.raw_iv !== "15/15/15") return false;
+        if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) return false;
+        if (onlyConfirmedShiny && !p.shiny) return false;
+        return true;
+      });
+
+      // Ordenação: Shundos confirmados no topo, depois ordenados por despawn/distância
+      finalList.sort((a, b) => {
+        if (a.shiny && !b.shiny) return -1;
+        if (!a.shiny && b.shiny) return 1;
+        const distA = a.distance_km ?? 99999;
+        const distB = b.distance_km ?? 99999;
+        return distA - distB;
+      });
+
+      finalList = finalList.slice(0, targetCount);
 
       return NextResponse.json({
         success: true,
         count: finalList.length,
         rounds: totalQueries,
-        mode: "shundo_global",
+        mode: "global_100iv",
         results: finalList
       });
     }
@@ -206,8 +295,6 @@ export async function POST(req: NextRequest) {
         for (const p of batch) {
           if (p.despawn_at_ms && p.despawn_at_ms <= now) continue;
           if (allShinys.has(p.encounter_id)) continue;
-
-          // Se estiver na lista de espécies ocultas pelo usuário, ignora
           if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
           const dist =
@@ -343,12 +430,12 @@ export async function GET(req: NextRequest) {
   const radiusKm = parseFloat(searchParams.get("radiusKm") || "50");
   const targetCount = parseInt(searchParams.get("targetCount") || "100", 10);
   const isGlobal = searchParams.get("global") === "true";
-  const shundoOnly = searchParams.get("shundo") === "true";
+  const onlyConfirmedShiny = searchParams.get("onlyConfirmedShiny") === "true";
 
   const fakeReq = new NextRequest(req.url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ lat, lng, radiusKm, targetCount, isGlobal, shundoOnly })
+    body: JSON.stringify({ lat, lng, radiusKm, targetCount, isGlobal, onlyConfirmedShiny })
   });
 
   return POST(fakeReq);

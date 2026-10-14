@@ -206,8 +206,14 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
               {pokemon.pokemon_name}
             </h3>
             {isShundo && (
-              <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                100%
+              <span
+                className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 ${
+                  pokemon.shiny
+                    ? "bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm"
+                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                }`}
+              >
+                {pokemon.shiny ? "✨ SHUNDO" : "💎 100% IV"}
               </span>
             )}
             <span className="text-[11px] font-mono text-zinc-400">
