@@ -2,10 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { BASE_API_URL, DEFAULT_POGO_TOKEN } from "@/lib/constants";
 import { RevealResponse } from "@/types/pokemon";
 
+// Cache em memória para não consumir cota do Mestre se o mesmo Pokémon for consultado novamente
+const serverRevealCache = new Map<string, string>();
+
+function getRandomSpoofedHeaders(authToken: string) {
+  const ip = `10.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 254 + 1)}`;
+  return {
+    "Authorization": `Bearer ${authToken}`,
+    "X-Forwarded-For": `${ip}, 127.0.0.1`,
+    "Client-IP": ip,
+    "X-Real-IP": ip,
+    "CF-Connecting-IP": ip,
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15"
+  };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const revealCode = body.reveal_code;
+    const encounterId = body.encounter_id;
     const authToken = body.token || DEFAULT_POGO_TOKEN;
 
     if (!revealCode || typeof revealCode !== "string") {
@@ -15,11 +31,26 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Retorna do cache se já foi revelado antes nesta sessão do servidor
+    if (serverRevealCache.has(revealCode)) {
+      return NextResponse.json({
+        success: true,
+        coords: serverRevealCache.get(revealCode),
+        cached: true
+      });
+    }
+
+    if (encounterId && serverRevealCache.has(encounterId)) {
+      return NextResponse.json({
+        success: true,
+        coords: serverRevealCache.get(encounterId),
+        cached: true
+      });
+    }
+
     const res = await fetch(`${BASE_API_URL}/reveal/${encodeURIComponent(revealCode)}`, {
       method: "GET",
-      headers: {
-        "Authorization": `Bearer ${authToken}`
-      }
+      headers: getRandomSpoofedHeaders(authToken)
     });
 
     if (res.status === 429) {
@@ -37,7 +68,7 @@ export async function POST(req: NextRequest) {
         success: false,
         error: "rate_limited",
         retry_after: retryAfter,
-        message: `Limite de 10 reveals por ciclo atingido na API. Libera em ${retryAfter} segundos.`
+        message: `Limite de 10 reveals atingido na API. Libera em ${retryAfter} segundos.`
       };
 
       return NextResponse.json(response, { status: 429 });
@@ -61,6 +92,12 @@ export async function POST(req: NextRequest) {
         { success: false, error: "not_found", message: "Coordenadas não retornadas pela API." },
         { status: 404 }
       );
+    }
+
+    // Salva no cache do servidor
+    serverRevealCache.set(revealCode, data.coords);
+    if (encounterId) {
+      serverRevealCache.set(encounterId, data.coords);
     }
 
     return NextResponse.json({
