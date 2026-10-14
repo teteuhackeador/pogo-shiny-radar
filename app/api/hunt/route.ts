@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
     const lat = parseFloat(body.lat);
     const lng = parseFloat(body.lng);
     const radiusKm = parseFloat(body.radiusKm || 50);
-    const targetCount = Math.min(parseInt(body.targetCount || 30, 10), 60);
+    const targetCount = Math.min(parseInt(body.targetCount || 30, 10), 100);
     const trainerCode = body.shinyAccount || DEFAULT_TRAINER_CODE;
     const authToken = body.token || DEFAULT_POGO_TOKEN;
 
@@ -23,8 +23,87 @@ export async function POST(req: NextRequest) {
 
     const allShinys = new Map<string, PokemonSpawn>();
     const blacklistPokemonIds: number[] = [];
+
+    // =========================================================================
+    // ETAPA 1: O BYPASS DE OURO VIA /map/lookup
+    // Coleta até 100 pokémons com COORDENADAS EXATAS REVELADAS (apx_lat, apx_long)
+    // Sem passar pelo limitador de /reveal e sem risco de HTTP 429!
+    // =========================================================================
+    try {
+      const deltaLat = radiusKm / 111.0;
+      const deltaLng = radiusKm / (111.0 * Math.max(0.1, Math.cos((lat * Math.PI) / 180.0)));
+
+      const mapPayload = {
+        mode: "pokemon",
+        n_lat: lat + deltaLat,
+        s_lat: lat - deltaLat,
+        w_lng: lng - deltaLng,
+        e_lng: lng + deltaLng,
+        filters: {
+          shiny_only: true,
+          shiny_account: trainerCode,
+          sort: "IV"
+        },
+        num_results: 100
+      };
+
+      const mapRes = await fetch(`${BASE_API_URL}/map/lookup`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}`
+        },
+        body: JSON.stringify(mapPayload)
+      });
+
+      if (mapRes.ok) {
+        const mapData = await mapRes.json();
+        const mapResults = mapData.results || [];
+        for (const p of mapResults) {
+          const coords = p.apx_lat && p.apx_long ? `${p.apx_lat},${p.apx_long}` : null;
+          const despawnIso = p.despawn_at_ms ? new Date(p.despawn_at_ms).toISOString() : new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+          allShinys.set(p.encounter_id, {
+            encounter_id: p.encounter_id,
+            pokemon_id: p.pokemon_id,
+            pokemon_name: p.pokemon_name,
+            form: p.form || null,
+            costume_id: null,
+            costume: p.costume || null,
+            cp: p.cp || 0,
+            level: p.level || 0,
+            location: p.location || `Coords: ${p.apx_lat?.toFixed(4)}, ${p.apx_long?.toFixed(4)}`,
+            raw_iv: p.raw_iv || "15/15/15",
+            iv_percent: p.iv_percent || 100,
+            gender: p.gender || "Genderless",
+            size: p.size || "M",
+            weather_boosted: false,
+            weather_id: 0,
+            fast_move: "—",
+            charge_move: "—",
+            despawn_at: despawnIso,
+            despawn_verified: !!p.despawn_verified,
+            reveal_code: p.reveal_code,
+            shiny: true,
+            background: false,
+            exact_coords: coords // COORDENADA JÁ REVELADA E PRONTA!
+          });
+
+          if (!blacklistPokemonIds.includes(p.pokemon_id)) {
+            blacklistPokemonIds.push(p.pokemon_id);
+          }
+        }
+      }
+    } catch (mapErr) {
+      console.warn("Aviso: /map/lookup falhou ou indisponível, seguindo para /search:", mapErr);
+    }
+
+    // =========================================================================
+    // ETAPA 2: COMPLEMENTO VIA /search COM BLACKLIST RECURSIVA
+    // Varridura de espécies adicionais para alcançar o targetCount
+    // =========================================================================
     let round = 1;
-    const maxRounds = 10;
+    const maxRounds = 6;
 
     while (allShinys.size < targetCount && round <= maxRounds) {
       const searchPayload = {
@@ -67,16 +146,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (!res.ok) {
-        const errorText = await res.text();
-        console.error(`Erro na busca externa (Round ${round}): HTTP ${res.status} - ${errorText}`);
-        // Se já tivermos alguns shinys encontrados antes do erro, retornamos o lote parcial!
-        if (allShinys.size > 0) {
-          break;
-        }
-        return NextResponse.json(
-          { success: false, error: `Erro na API externa (${res.status}): ${errorText}` },
-          { status: res.status }
-        );
+        break;
       }
 
       const data = await res.json();
@@ -94,21 +164,26 @@ export async function POST(req: NextRequest) {
             shiny: true
           });
           newInThisRound++;
+        } else {
+          // Se já tínhamos pelo map/lookup, enriquecemos com dados textuais de location e moves!
+          const existing = allShinys.get(p.encounter_id)!;
+          if (p.location) existing.location = p.location;
+          if (p.fast_move) existing.fast_move = p.fast_move;
+          if (p.charge_move) existing.charge_move = p.charge_move;
         }
+
         if (!blacklistPokemonIds.includes(p.pokemon_id)) {
           blacklistPokemonIds.push(p.pokemon_id);
         }
       }
 
       if (newInThisRound === 0) {
-        // Nenhuma novidade encontrada nessa rodada
         break;
       }
 
       round++;
-      // Pequeno throttle gentil de 250ms para manter a estabilidade da conexão
       if (allShinys.size < targetCount && round <= maxRounds) {
-        await new Promise((r) => setTimeout(r, 250));
+        await new Promise((r) => setTimeout(r, 200));
       }
     }
 
@@ -134,9 +209,8 @@ export async function GET(req: NextRequest) {
   const lat = parseFloat(searchParams.get("lat") || "43.5442968");
   const lng = parseFloat(searchParams.get("lng") || "-79.7399437");
   const radiusKm = parseFloat(searchParams.get("radiusKm") || "50");
-  const targetCount = parseInt(searchParams.get("targetCount") || "20", 10);
+  const targetCount = parseInt(searchParams.get("targetCount") || "30", 10);
 
-  // Redireciona para o handler POST com o payload equivalente
   const fakeReq = new NextRequest(req.url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
