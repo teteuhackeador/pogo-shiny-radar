@@ -274,6 +274,9 @@ export default function Home() {
           if (!matchName && !matchLoc) return false;
         }
 
+        // Trava absoluta de Shundo Global (elimina qualquer IV < 100%)
+        if (isShundoGlobal && p.iv_percent < 100 && p.raw_iv !== "15/15/15") return false;
+
         // Filtro por IV
         if (ivFilter === "50" && p.iv_percent < 50) return false;
         if (ivFilter === "80" && p.iv_percent < 80) return false;

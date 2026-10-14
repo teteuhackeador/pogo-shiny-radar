@@ -57,8 +57,12 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify({
               shiny_only: true,
               shiny_account: trainerCode,
-              iv_min: 100,
-              sort: "IV",
+              iv_mode: "percent",
+              iv_percent_min: 100,
+              raw_iv_atk: 15,
+              raw_iv_def: 15,
+              raw_iv_sta: 15,
+              sort: "DSP",
               blacklist_pokemon_ids: blacklistIds
             })
           });
@@ -72,7 +76,13 @@ export async function POST(req: NextRequest) {
           const results: any[] = data.results || [];
           if (results.length === 0) break;
 
+          let foundShundoThisRound = 0;
+
           for (const p of results) {
+            // Trava estrita de SHUNDO: descarta terminantemente qualquer Pokémon abaixo de 100% (ex: 97.8%)
+            const isTrueShundo = p.iv_percent === 100 || p.raw_iv === "15/15/15";
+            if (!isTrueShundo) continue;
+
             // Descartar expirados
             if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
 
@@ -85,6 +95,8 @@ export async function POST(req: NextRequest) {
             if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
             if (allShinys.has(p.encounter_id)) continue;
+
+            foundShundoThisRound++;
 
             // Se coordenadas de referência foram passadas, calcula a distância até o país/cidade
             const dist =
@@ -99,6 +111,9 @@ export async function POST(req: NextRequest) {
               distance_km: dist
             });
           }
+
+          // Se a API não retornou nenhum 100% puro nesta rodada, encerra o ciclo
+          if (foundShundoThisRound === 0) break;
         } catch (err) {
           console.warn(`Erro na rodada ${round + 1} de Shundo Global:`, err);
           break;
