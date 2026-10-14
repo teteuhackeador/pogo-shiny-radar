@@ -52,12 +52,15 @@ export interface HuntResponse {
 export interface RevealRequestPayload {
   reveal_code: string;
   encounter_id?: string;
+  apx_lat?: number | null;
+  apx_long?: number | null;
   token?: string;
 }
 
 export interface RevealResponse {
   success: boolean;
   coords?: string;
+  is_approx?: boolean;
   error?: 'rate_limited' | 'invalid_code' | 'api_error' | string;
   retry_after?: number;
   message?: string;

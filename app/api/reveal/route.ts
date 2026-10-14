@@ -22,6 +22,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const revealCode = body.reveal_code;
     const encounterId = body.encounter_id;
+    const apxLat = body.apx_lat;
+    const apxLng = body.apx_long;
     const authToken = body.token || DEFAULT_POGO_TOKEN;
 
     if (!revealCode || typeof revealCode !== "string") {
@@ -62,6 +64,17 @@ export async function POST(req: NextRequest) {
         }
       } catch (e) {
         // Fallback
+      }
+
+      // Se temos coordenadas aproximadas, devolvemos como fallback para o usuário nunca ficar travado!
+      if (apxLat != null && apxLng != null) {
+        return NextResponse.json({
+          success: true,
+          coords: `${apxLat},${apxLng}`,
+          is_approx: true,
+          retry_after: retryAfter,
+          message: `Cota de reveals da API atingida (${retryAfter}s). Fornecendo coordenadas aproximadas (~100m).`
+        });
       }
 
       const response: RevealResponse = {

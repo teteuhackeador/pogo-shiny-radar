@@ -73,10 +73,15 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
     return () => clearInterval(interval);
   }, [pokemon.despawn_at]);
 
-  // Revela e retorna a coordenada exata
-  const fetchExactCoords = async (): Promise<string | null> => {
-    if (exactCoords) return exactCoords;
-    if (!pokemon.reveal_code) return null;
+  // Revela e retorna a coordenada (exata verdadeira ou fallback aproximado)
+  const fetchExactCoords = async (): Promise<{ coords: string; isApprox: boolean } | null> => {
+    if (exactCoords) return { coords: exactCoords, isApprox: false };
+    if (!pokemon.reveal_code) {
+      if (pokemon.apx_lat != null && pokemon.apx_long != null) {
+        return { coords: `${pokemon.apx_lat},${pokemon.apx_long}`, isApprox: true };
+      }
+      return null;
+    }
 
     setRevealing(true);
     setRevealError(null);
@@ -87,27 +92,47 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reveal_code: pokemon.reveal_code,
-          encounter_id: pokemon.encounter_id
+          encounter_id: pokemon.encounter_id,
+          apx_lat: pokemon.apx_lat,
+          apx_long: pokemon.apx_long
         })
       });
 
       const data = await res.json();
 
+      if (data.success && data.coords) {
+        if (!data.is_approx) {
+          onRevealSuccess(pokemon.encounter_id, data.coords);
+        } else {
+          setRevealError(`Cota da API ativa (${data.retry_after || 180}s) • Usando aprox.`);
+          onRateLimited(data.retry_after || 180);
+        }
+        return { coords: data.coords, isApprox: !!data.is_approx };
+      }
+
       if (res.status === 429 || data.error === "rate_limited") {
         const retry = data.retry_after || 180;
-        setRevealError(`Cota atingida (${retry}s)`);
+        setRevealError(`Cota da API ativa (${retry}s) • Usando aprox.`);
         onRateLimited(retry);
+
+        // Fallback imediato para coordenadas aproximadas
+        if (pokemon.apx_lat != null && pokemon.apx_long != null) {
+          return { coords: `${pokemon.apx_lat},${pokemon.apx_long}`, isApprox: true };
+        }
         return null;
       }
 
-      if (data.success && data.coords) {
-        onRevealSuccess(pokemon.encounter_id, data.coords);
-        return data.coords;
-      } else {
-        setRevealError("Falha ao obter coordenadas.");
-        return null;
+      // Fallback em caso de falha da API
+      if (pokemon.apx_lat != null && pokemon.apx_long != null) {
+        return { coords: `${pokemon.apx_lat},${pokemon.apx_long}`, isApprox: true };
       }
+
+      setRevealError("Falha ao obter coordenadas.");
+      return null;
     } catch {
+      if (pokemon.apx_lat != null && pokemon.apx_long != null) {
+        return { coords: `${pokemon.apx_lat},${pokemon.apx_long}`, isApprox: true };
+      }
       setRevealError("Erro de conexão.");
       return null;
     } finally {
@@ -115,38 +140,44 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
     }
   };
 
-  // Botão Copiar Coords: obtém a coordenada exata verdadeira e copia pro clipboard
+  // Botão Copiar Coords: obtém a coordenada exata verdadeira ou aproximada e copia pro clipboard
   const handleCopyCoords = async () => {
-    let coordsToCopy = exactCoords;
+    let target = exactCoords ? { coords: exactCoords, isApprox: false } : null;
 
-    if (!coordsToCopy) {
-      coordsToCopy = await fetchExactCoords();
+    if (!target) {
+      target = await fetchExactCoords();
     }
 
-    if (!coordsToCopy) return;
+    if (!target || !target.coords) return;
 
     try {
-      await navigator.clipboard.writeText(coordsToCopy);
+      await navigator.clipboard.writeText(target.coords);
       setCopied(true);
-      if (onToast) onToast(`Copiado: ${coordsToCopy}`);
+      if (onToast) {
+        if (target.isApprox) {
+          onToast(`Copiado aprox. (~100m da cota): ${target.coords}`);
+        } else {
+          onToast(`Copiado exato: ${target.coords}`);
+        }
+      }
       setTimeout(() => setCopied(false), 2000);
     } catch {
       if (onToast) onToast("Erro ao copiar para a área de transferência.");
     }
   };
 
-  // Botão Maps: abre diretamente no Google Maps com a coordenada verdadeira
+  // Botão Maps: abre diretamente no Google Maps com a coordenada
   const handleOpenMaps = async () => {
-    let coordsToOpen = exactCoords;
+    let target = exactCoords ? { coords: exactCoords, isApprox: false } : null;
 
-    if (!coordsToOpen) {
-      coordsToOpen = await fetchExactCoords();
+    if (!target) {
+      target = await fetchExactCoords();
     }
 
-    if (!coordsToOpen) return;
+    if (!target || !target.coords) return;
 
     window.open(
-      `https://www.google.com/maps?q=${encodeURIComponent(coordsToOpen)}`,
+      `https://www.google.com/maps?q=${encodeURIComponent(target.coords)}`,
       "_blank",
       "noopener,noreferrer"
     );
