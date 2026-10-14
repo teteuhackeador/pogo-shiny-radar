@@ -227,20 +227,24 @@ export default function Home() {
       })
       .sort((a, b) => {
         if (sortOption === "distance") {
-          const coordsA = revealedCoordsMap[a.encounter_id] || a.exact_coords;
-          const coordsB = revealedCoordsMap[b.encounter_id] || b.exact_coords;
-          if (coordsA && coordsB) {
-            const [latA, lngA] = coordsA.split(',').map(Number);
-            const [latB, lngB] = coordsB.split(',').map(Number);
-            const distA = calculateDistanceKm(lat, lng, latA, lngA);
-            const distB = calculateDistanceKm(lat, lng, latB, lngB);
-            return distA - distB;
-          }
-          if (coordsA && !coordsB) return -1;
-          if (!coordsA && coordsB) return 1;
-          const rankA = a.distance_rank ?? 999;
-          const rankB = b.distance_rank ?? 999;
-          return rankA - rankB;
+          const getDist = (p: PokemonSpawn): number => {
+            const rev = revealedCoordsMap[p.encounter_id] || p.exact_coords;
+            if (rev) {
+              const [cLat, cLng] = rev.split(",").map(Number);
+              if (!isNaN(cLat) && !isNaN(cLng)) {
+                return calculateDistanceKm(lat, lng, cLat, cLng);
+              }
+            }
+            if (p.apx_lat != null && p.apx_long != null) {
+              return calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long);
+            }
+            if (p.distance_km != null) {
+              return p.distance_km;
+            }
+            return 9999;
+          };
+
+          return getDist(a) - getDist(b);
         }
         if (sortOption === "despawn") {
           const timeA = new Date(a.despawn_at).getTime();

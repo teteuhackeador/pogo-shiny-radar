@@ -21,6 +21,8 @@ export interface PokemonSpawn {
   reveal_code: string;
   distance_km?: number | null;
   distance_rank?: number | null;
+  apx_lat?: number | null;
+  apx_long?: number | null;
   pvp?: any;
   shiny: boolean;
   background: boolean;

@@ -263,6 +263,8 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
                 if (!isNaN(cLat) && !isNaN(cLng)) {
                   dist = calculateDistanceKm(coordsCenter.lat, coordsCenter.lng, cLat, cLng);
                 }
+              } else if (pokemon.apx_lat != null && pokemon.apx_long != null && coordsCenter) {
+                dist = calculateDistanceKm(coordsCenter.lat, coordsCenter.lng, pokemon.apx_lat, pokemon.apx_long);
               } else if (pokemon.distance_km != null) {
                 dist = pokemon.distance_km;
               }
@@ -273,7 +275,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
                 </>
               ) : null;
             })()}
-            <span className="truncate">{pokemon.location || "Localização informada"}</span>
+            <span className="truncate">{pokemon.location || (pokemon.apx_lat ? `Região de ${pokemon.apx_lat.toFixed(3)}, ${pokemon.apx_long?.toFixed(3)}` : "Localização informada")}</span>
           </div>
         </div>
       </div>
