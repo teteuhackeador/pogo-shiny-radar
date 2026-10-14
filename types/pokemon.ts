@@ -31,11 +31,14 @@ export interface PokemonSpawn {
   is_captured?: boolean;
 }
 
+export type RadarHuntMode = 'local_shiny' | 'shundo_local' | 'shundo_global';
+
 export interface HuntRequestPayload {
   lat: number;
   lng: number;
   radiusKm?: number;
   targetCount?: number;
+  huntMode?: RadarHuntMode;
   isGlobal?: boolean;
   shundoOnly?: boolean;
   hiddenSpecies?: string[];

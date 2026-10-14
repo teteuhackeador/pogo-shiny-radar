@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { GEO_PRESETS, GeoPreset } from "@/lib/constants";
-import { Navigation, Loader2, Sparkles, Globe, Compass } from "lucide-react";
+import { RadarHuntMode } from "@/types/pokemon";
+import { Navigation, Loader2, Sparkles, Globe, Compass, Target } from "lucide-react";
 
 interface ControlPanelProps {
   lat: number;
@@ -10,13 +11,11 @@ interface ControlPanelProps {
   radiusKm: number;
   targetCount: number;
   isLoading: boolean;
-  isShundoGlobal: boolean;
-  onlyConfirmedShiny: boolean;
+  huntMode: RadarHuntMode;
   onCoordinatesChange: (lat: number, lng: number) => void;
   onRadiusChange: (radius: number) => void;
   onTargetCountChange: (count: number) => void;
-  onToggleShundoGlobal: (isGlobal: boolean) => void;
-  onToggleOnlyConfirmedShiny: (onlyShiny: boolean) => void;
+  onHuntModeChange: (mode: RadarHuntMode) => void;
   onExecuteScan: () => void;
 }
 
@@ -26,20 +25,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   radiusKm,
   targetCount,
   isLoading,
-  isShundoGlobal,
-  onlyConfirmedShiny,
+  huntMode,
   onCoordinatesChange,
   onRadiusChange,
   onTargetCountChange,
-  onToggleShundoGlobal,
-  onToggleOnlyConfirmedShiny,
+  onHuntModeChange,
   onExecuteScan
 }) => {
   const [coordsInput, setCoordsInput] = useState<string>(`${lat},${lng}`);
   const [isGettingGps, setIsGettingGps] = useState<boolean>(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
 
-  // Sincroniza o input quando as coordenadas mudam externamente (ex: presets)
   useEffect(() => {
     setCoordsInput(`${lat},${lng}`);
   }, [lat, lng]);
@@ -94,40 +90,53 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   };
 
   return (
-    <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-3.5 sm:p-4 shadow-sm text-zinc-100 space-y-3">
-      {/* Abas Superiores de Modo: Radar Local vs 100% IV Global */}
-      <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-[#0e0e11] border border-[#27272a]">
+    <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-3 sm:p-4 shadow-sm text-zinc-100 space-y-3">
+      {/* 3 Modos de Caça Claros e Diretos */}
+      <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#0e0e11] border border-[#27272a]">
         <button
           type="button"
-          onClick={() => onToggleShundoGlobal(false)}
-          className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            !isShundoGlobal
+          onClick={() => onHuntModeChange("local_shiny")}
+          className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-[11px] font-semibold transition-all ${
+            huntMode === "local_shiny"
               ? "bg-[#1f1f23] text-zinc-100 border border-zinc-700/60 shadow-sm"
               : "text-zinc-400 hover:text-zinc-200"
           }`}
         >
-          <Compass className="w-3.5 h-3.5 text-zinc-300" />
-          <span>Radar Local</span>
+          <Compass className="w-3.5 h-3.5 mb-0.5 text-zinc-300" />
+          <span>Shinys (Raio)</span>
         </button>
 
         <button
           type="button"
-          onClick={() => onToggleShundoGlobal(true)}
-          className={`flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            isShundoGlobal
-              ? "bg-amber-950/40 text-amber-300 border border-amber-600/50 shadow-sm"
+          onClick={() => onHuntModeChange("shundo_local")}
+          className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-[11px] font-semibold transition-all ${
+            huntMode === "shundo_local"
+              ? "bg-amber-950/40 text-amber-300 border border-amber-600/60 shadow-sm"
               : "text-zinc-400 hover:text-amber-300/80"
           }`}
         >
-          <Globe className="w-3.5 h-3.5 text-amber-400" />
-          <span>100% IV Mundial</span>
+          <Target className="w-3.5 h-3.5 mb-0.5 text-amber-400" />
+          <span>Shundo (Raio)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onHuntModeChange("shundo_global")}
+          className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-[11px] font-semibold transition-all ${
+            huntMode === "shundo_global"
+              ? "bg-amber-950/40 text-amber-300 border border-amber-600/60 shadow-sm"
+              : "text-zinc-400 hover:text-amber-300/80"
+          }`}
+        >
+          <Globe className="w-3.5 h-3.5 mb-0.5 text-amber-400" />
+          <span>Shundo (Global)</span>
         </button>
       </div>
 
       {/* Presets Rápidos */}
       <div>
         <div className="text-[11px] font-medium text-zinc-400 mb-1.5 flex items-center justify-between">
-          <span>{isShundoGlobal ? "Ponto de Referência (Cálculo de Distância)" : "Locais Rápidos"}</span>
+          <span>Locais Rápidos</span>
         </div>
         <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-1">
           {GEO_PRESETS.map((preset) => {
@@ -155,7 +164,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       <form onSubmit={handleFormSubmit} className="space-y-3">
         <div>
           <label className="block text-[11px] font-medium text-zinc-400 mb-1">
-            {isShundoGlobal ? "Sua Posição (para estimar cooldown de teleport)" : "Coordenadas (Latitude, Longitude)"}
+            {huntMode === "shundo_global"
+              ? "Sua Posição (para estimar cooldown de teleport)"
+              : "Coordenadas Centrais (Latitude, Longitude)"}
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -185,49 +196,22 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           )}
         </div>
 
-        {/* Alternância Shundo Confirmado vs Todos os 100% IV no Modo Global */}
-        {isShundoGlobal && (
-          <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#18181b] border border-[#27272a]">
-            <div className="flex flex-col pr-2">
-              <span className="text-xs font-semibold text-zinc-200">
-                {onlyConfirmedShiny ? "Apenas Shiny Confirmado" : "Todos os 100% IV (Sniper)"}
-              </span>
-              <span className="text-[10px] text-zinc-400">
-                {onlyConfirmedShiny
-                  ? "Apenas Shundos com predição ativa para sua conta"
-                  : "Todos os 100% IV do planeta para Shiny Check"}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => onToggleOnlyConfirmedShiny(!onlyConfirmedShiny)}
-              className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                onlyConfirmedShiny
-                  ? "bg-amber-400 text-zinc-950 font-bold"
-                  : "bg-emerald-950/40 text-emerald-300 border border-emerald-800/50"
-              }`}
-            >
-              {onlyConfirmedShiny ? "Só Shiny" : "Global 100%"}
-            </button>
-          </div>
-        )}
-
-        {/* Seletores Compactos: Raio e Alvos */}
+        {/* Seletores: Raio e Alvos */}
         <div className="grid grid-cols-2 gap-2.5 pt-1">
           <div>
             <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
-              <span>{isShundoGlobal ? "Área" : "Raio"}</span>
+              <span>{huntMode === "shundo_global" ? "Área" : "Raio"}</span>
               <span className="font-mono text-zinc-200 font-semibold">
-                {isShundoGlobal ? "Mundial" : `${radiusKm}km`}
+                {huntMode === "shundo_global" ? "Mundial" : `${radiusKm}km`}
               </span>
             </div>
-            {isShundoGlobal ? (
+            {huntMode === "shundo_global" ? (
               <div className="py-1 px-2.5 rounded-lg text-[11px] font-medium bg-amber-950/20 text-amber-300 border border-amber-800/40 text-center truncate">
                 Planeta Terra 🌐
               </div>
             ) : (
               <div className="grid grid-cols-4 gap-1">
-                {[15, 30, 50, 100].map((r) => (
+                {[25, 50, 100, 200].map((r) => (
                   <button
                     key={r}
                     type="button"
@@ -278,7 +262,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide flex items-center justify-center gap-2 transition-all active:scale-[0.99] ${
               isLoading
                 ? "bg-zinc-800 text-zinc-400 border border-[#27272a] cursor-wait"
-                : isShundoGlobal
+                : huntMode !== "local_shiny"
                 ? "bg-amber-400 hover:bg-amber-300 text-zinc-950 font-bold border border-amber-300 shadow-md shadow-amber-950/30"
                 : "bg-zinc-100 hover:bg-white text-zinc-950 font-bold border border-zinc-200 shadow-sm"
             }`}
@@ -286,16 +270,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             {isLoading ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-zinc-400" />
-                <span>Varrendo satélites mundiais...</span>
+                <span>Varrendo satélites...</span>
               </>
-            ) : isShundoGlobal ? (
+            ) : huntMode === "shundo_local" ? (
               <>
                 <Sparkles className="w-3.5 h-3.5 text-zinc-950" />
-                <span>
-                  {onlyConfirmedShiny
-                    ? "Buscar Shundos Confirmados"
-                    : "Varredura Mundial de 100% IV"}
-                </span>
+                <span>Buscar Shundos no Raio ({radiusKm}km)</span>
+              </>
+            ) : huntMode === "shundo_global" ? (
+              <>
+                <Sparkles className="w-3.5 h-3.5 text-zinc-950" />
+                <span>Buscar Shundos no Mundo Todo</span>
               </>
             ) : (
               <>

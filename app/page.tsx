@@ -9,6 +9,7 @@ import {
   PokemonSpawn,
   IvFilterOption,
   SortOption,
+  RadarHuntMode,
   HuntResponse
 } from "@/types/pokemon";
 import { calculateDistanceKm } from "@/lib/constants";
@@ -20,8 +21,7 @@ export default function Home() {
   const [lng, setLng] = useState<number>(-79.7399437);
   const [radiusKm, setRadiusKm] = useState<number>(50);
   const [targetCount, setTargetCount] = useState<number>(100);
-  const [isShundoGlobal, setIsShundoGlobal] = useState<boolean>(false);
-  const [onlyConfirmedShiny, setOnlyConfirmedShiny] = useState<boolean>(false);
+  const [huntMode, setHuntMode] = useState<RadarHuntMode>("local_shiny");
 
   // Estados de Busca e Dados
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -198,7 +198,6 @@ export default function Home() {
     setIsLoading(true);
     setErrorMessage(null);
 
-    // Salva as últimas coordenadas utilizadas
     try {
       localStorage.setItem("pogo_last_coords", JSON.stringify({ lat, lng }));
     } catch {}
@@ -212,8 +211,7 @@ export default function Home() {
           lng,
           radiusKm,
           targetCount,
-          isGlobal: isShundoGlobal,
-          onlyConfirmedShiny,
+          huntMode,
           hiddenSpecies: Array.from(hiddenSpecies)
         })
       });
@@ -227,11 +225,13 @@ export default function Home() {
       }
 
       setAllPokemons(data.results || []);
-      const countMsg = isShundoGlobal
-        ? onlyConfirmedShiny
-          ? `${data.results?.length || 0} Shundos confirmados ativos no mundo!`
-          : `${data.results?.length || 0} Pokémons 100% IV encontrados no mundo!`
-        : `${data.results?.length || 0} shinys encontrados.`;
+
+      let countMsg = `${data.results?.length || 0} shinys encontrados.`;
+      if (huntMode === "shundo_local") {
+        countMsg = `${data.results?.length || 0} Shundos encontrados no raio de ${radiusKm}km!`;
+      } else if (huntMode === "shundo_global") {
+        countMsg = `${data.results?.length || 0} Shundos confirmados ativos no mundo!`;
+      }
       showToast(countMsg);
     } catch (err: any) {
       setErrorMessage(err.message || "Erro de rede ao conectar com o radar.");
@@ -277,11 +277,13 @@ export default function Home() {
           if (!matchName && !matchLoc) return false;
         }
 
-        // Trava absoluta de Shundo Global (elimina qualquer IV < 100%)
-        if (isShundoGlobal && p.iv_percent < 100 && p.raw_iv !== "15/15/15") return false;
-        if (isShundoGlobal && onlyConfirmedShiny && !p.shiny) return false;
+        // Se estiver em modo Shundo (local ou global): SÓ aceita 100% IV e SÓ aceita quem brilha Shiny!
+        if (huntMode !== "local_shiny") {
+          if (p.iv_percent < 100 && p.raw_iv !== "15/15/15") return false;
+          if (!p.shiny) return false;
+        }
 
-        // Filtro por IV
+        // Filtro por IV no modo normal
         if (ivFilter === "50" && p.iv_percent < 50) return false;
         if (ivFilter === "80" && p.iv_percent < 80) return false;
         if (ivFilter === "90" && p.iv_percent < 90) return false;
@@ -290,10 +292,6 @@ export default function Home() {
         return true;
       })
       .sort((a, b) => {
-        // Shundos confirmados sempre têm destaque no topo
-        if (a.shiny && !b.shiny) return -1;
-        if (!a.shiny && b.shiny) return 1;
-
         if (sortOption === "distance") {
           const getDist = (p: PokemonSpawn): number => {
             const rev = revealedCoordsMap[p.encounter_id] || p.exact_coords;
@@ -330,7 +328,7 @@ export default function Home() {
         }
         return 0;
       });
-  }, [allPokemons, capturedIds, hiddenSpecies, hideCaptured, searchQuery, ivFilter, sortOption, currentTime, revealedCoordsMap, lat, lng, isShundoGlobal, onlyConfirmedShiny]);
+  }, [allPokemons, capturedIds, hiddenSpecies, hideCaptured, searchQuery, ivFilter, sortOption, currentTime, revealedCoordsMap, lat, lng, huntMode]);
 
   const capturedCount = useMemo(() => {
     return allPokemons.filter((p) => capturedIds.has(p.encounter_id)).length;
@@ -340,26 +338,24 @@ export default function Home() {
 
   return (
     <main className="w-full max-w-lg mx-auto px-3 sm:px-4 py-3 min-h-screen pb-16">
-      {/* Cabeçalho */}
+      {/* Cabeçalho com Alerta de Teleport Cooldown de 2h */}
       <Header cooldownSeconds={cooldownSeconds} totalFound={allPokemons.length} />
 
-      {/* Painel de Coordenadas e Scan */}
+      {/* Painel de Coordenadas e Scan com os 3 Modos */}
       <ControlPanel
         lat={lat}
         lng={lng}
         radiusKm={radiusKm}
         targetCount={targetCount}
         isLoading={isLoading}
-        isShundoGlobal={isShundoGlobal}
-        onlyConfirmedShiny={onlyConfirmedShiny}
+        huntMode={huntMode}
         onCoordinatesChange={(newLat, newLng) => {
           setLat(newLat);
           setLng(newLng);
         }}
         onRadiusChange={(r) => setRadiusKm(r)}
         onTargetCountChange={(c) => setTargetCount(c)}
-        onToggleShundoGlobal={(isGlobal) => setIsShundoGlobal(isGlobal)}
-        onToggleOnlyConfirmedShiny={(val) => setOnlyConfirmedShiny(val)}
+        onHuntModeChange={(m) => setHuntMode(m)}
         onExecuteScan={handleExecuteScan}
       />
 
