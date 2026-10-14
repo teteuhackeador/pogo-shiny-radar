@@ -256,8 +256,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         {/* Botão de Disparo do Scanner */}
         <div className="pt-2">
           <button
-            type="button"
-            onClick={onExecuteScan}
+            type="submit"
             disabled={isLoading}
             className={`w-full py-2.5 px-4 rounded-xl text-xs font-semibold tracking-wide flex items-center justify-center gap-2 transition-all active:scale-[0.99] ${
               isLoading

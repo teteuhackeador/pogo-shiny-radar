@@ -33,7 +33,6 @@ export async function POST(req: NextRequest) {
     const trainerCode = body.shinyAccount || DEFAULT_TRAINER_CODE;
     const hiddenSpecies: string[] = Array.isArray(body.hiddenSpecies) ? body.hiddenSpecies : [];
 
-    // Determina o modo de caça
     let mode: RadarHuntMode = body.huntMode || "local_shiny";
     if (body.isGlobal || body.shundoGlobal) {
       mode = "shundo_global";
@@ -46,16 +45,14 @@ export async function POST(req: NextRequest) {
     let totalQueries = 0;
 
     // =========================================================================
-    // MODO 1: SHUNDO GLOBAL (100% IV + SHINY GARANTIDO NO MUNDO TODO)
+    // MODO 1: SHUNDO GLOBAL (SHUNDOS CONFIRMADOS NO TOPO + 100% IV HUNDOS MUNDIAIS)
     // =========================================================================
     if (mode === "shundo_global") {
-      let blacklist: number[] = [];
-      const maxRounds = 4;
-
-      for (let r = 0; r < maxRounds; r++) {
+      // 1. Shundos Confirmados para a conta do usuário (100% IV + Shiny verificado)
+      const sortTypes = ["DSP", "IV"];
+      for (const sortType of sortTypes) {
         totalQueries++;
-        const token = POGO_TOKENS[r % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
-
+        const token = POGO_TOKENS[totalQueries % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
         try {
           const res = await fetch(`${BASE_API_URL}/search`, {
             method: "POST",
@@ -65,9 +62,78 @@ export async function POST(req: NextRequest) {
               shiny_account: trainerCode,
               iv_mode: "percent",
               iv_percent_min: 100,
-              raw_iv_atk: 15,
-              raw_iv_def: 15,
-              raw_iv_sta: 15,
+              sort: sortType
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            for (const p of (data.results || [])) {
+              if (p.iv_percent !== 100 && p.raw_iv !== "15/15/15") continue;
+              if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+              if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+              allShinys.set(p.encounter_id, {
+                ...p,
+                shiny: true, // Shundo confirmado para o usuário
+                exact_coords: null,
+                distance_km: null
+              });
+            }
+          }
+        } catch (e) {
+          console.warn("Aviso no /search Shundo Confirmado:", e);
+        }
+      }
+
+      // 2. Feeds Mundiais de 100% IV Hundos (milhares de 100% IV disponíveis no mundo)
+      const feedEndpoints = [
+        "/feeds/regional-100iv",
+        "/feeds/rare-100iv",
+        "/feeds/high-cp-100iv"
+      ];
+
+      for (const feedUrl of feedEndpoints) {
+        totalQueries++;
+        const token = POGO_TOKENS[totalQueries % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+        try {
+          const feedRes = await fetch(`${BASE_API_URL}${feedUrl}`, {
+            headers: getRandomSpoofedHeaders(token)
+          });
+
+          if (feedRes.ok) {
+            const feedData = await feedRes.json();
+            for (const p of (feedData.results || [])) {
+              if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+              if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+              if (!allShinys.has(p.encounter_id)) {
+                allShinys.set(p.encounter_id, {
+                  ...p,
+                  shiny: false, // Hundo 100% IV (cabe ao treinador fazer Shiny Check)
+                  raw_iv: "15/15/15",
+                  iv_percent: 100,
+                  exact_coords: null,
+                  distance_km: null
+                });
+              }
+            }
+          }
+        } catch {}
+      }
+
+      // 3. Busca Global Recursiva de 100% IV Hundos
+      let blacklist: number[] = [];
+      for (let r = 0; r < 3; r++) {
+        totalQueries++;
+        const token = POGO_TOKENS[totalQueries % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+        try {
+          const res = await fetch(`${BASE_API_URL}/search`, {
+            method: "POST",
+            headers: getRandomSpoofedHeaders(token),
+            body: JSON.stringify({
+              iv_mode: "percent",
+              iv_percent_min: 100,
               sort: "DSP",
               blacklist_pokemon_ids: blacklist
             })
@@ -78,10 +144,7 @@ export async function POST(req: NextRequest) {
           const results: any[] = data.results || [];
           if (results.length === 0) break;
 
-          let found = 0;
           for (const p of results) {
-            // Trava estrita de Shundo puro
-            if (p.iv_percent !== 100 && p.raw_iv !== "15/15/15") continue;
             if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
             if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
@@ -89,33 +152,28 @@ export async function POST(req: NextRequest) {
               blacklist.push(p.pokemon_id);
             }
 
-            if (allShinys.has(p.encounter_id)) continue;
-            found++;
-
-            const dist =
-              p.apx_lat != null && p.apx_long != null && !isNaN(lat) && !isNaN(lng)
-                ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
-                : null;
-
-            allShinys.set(p.encounter_id, {
-              ...p,
-              shiny: true, // Garante que brilha na conta
-              exact_coords: null,
-              distance_km: dist
-            });
+            if (!allShinys.has(p.encounter_id)) {
+              allShinys.set(p.encounter_id, {
+                ...p,
+                shiny: false,
+                raw_iv: "15/15/15",
+                iv_percent: 100,
+                exact_coords: null,
+                distance_km: null
+              });
+            }
           }
-
-          if (found === 0) break;
         } catch {
           break;
         }
       }
 
+      // Ordenação: Shundos Confirmados (shiny: true) SEMPRE no topo com destaque, seguidos por Hundos 100% IV
       const finalList = Array.from(allShinys.values())
         .sort((a, b) => {
-          const distA = a.distance_km ?? 99999;
-          const distB = b.distance_km ?? 99999;
-          return distA - distB;
+          if (a.shiny && !b.shiny) return -1;
+          if (!a.shiny && b.shiny) return 1;
+          return 0;
         })
         .slice(0, targetCount);
 
@@ -129,20 +187,20 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================================================================
-    // COORDENADAS OBRIGATÓRIAS PARA MODOS LOCAIS (shundo_local e local_shiny)
+    // COORDENADAS OBRIGATÓRIAS PARA OS MODOS LOCAIS (shundo_local e local_shiny)
     // =========================================================================
     if (isNaN(lat) || isNaN(lng)) {
       return NextResponse.json(
-        { success: false, error: "Coordenadas 'lat' e 'lng' são obrigatórias para busca em torno de um local." },
+        { success: false, error: "Coordenadas 'lat' e 'lng' são obrigatórias para buscas em torno de um local." },
         { status: 400 }
       );
     }
 
     // =========================================================================
-    // MODO 2: SHUNDO LOCAL (100% IV + SHINY NO RAIO DA COORDENADA ESPECÍFICA)
+    // MODO 2: SHUNDO LOCAL (SHUNDOS CONFIRMADOS NO RAIO + 100% IVs E ALTO IV DA REGIÃO)
     // =========================================================================
     if (mode === "shundo_local") {
-      // 1. Busca Local Direta via /search com Filtro de Shundo Puro
+      // 1. Shundos Confirmados no Raio
       try {
         totalQueries++;
         const token = POGO_TOKENS[0] || DEFAULT_POGO_TOKEN;
@@ -154,9 +212,6 @@ export async function POST(req: NextRequest) {
             shiny_account: trainerCode,
             iv_mode: "percent",
             iv_percent_min: 100,
-            raw_iv_atk: 15,
-            raw_iv_def: 15,
-            raw_iv_sta: 15,
             center_lat: lat,
             center_lng: lng,
             radius_km: radiusKm,
@@ -178,7 +233,7 @@ export async function POST(req: NextRequest) {
 
             allShinys.set(p.encounter_id, {
               ...p,
-              shiny: true,
+              shiny: true, // Shundo confirmado para o usuário no raio!
               exact_coords: null,
               distance_km: dist
             });
@@ -188,7 +243,95 @@ export async function POST(req: NextRequest) {
         console.warn("Aviso no /search Shundo Local:", err);
       }
 
-      // 2. Varredura no /map/lookup da área local para capturar qualquer Shundo que o /search tenha omitido
+      // 2. 100% IV Hundos no Raio (para fazer Shiny Check local sem tomar softban)
+      try {
+        totalQueries++;
+        const token = POGO_TOKENS[1 % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+        const res = await fetch(`${BASE_API_URL}/search`, {
+          method: "POST",
+          headers: getRandomSpoofedHeaders(token),
+          body: JSON.stringify({
+            iv_mode: "percent",
+            iv_percent_min: 100,
+            center_lat: lat,
+            center_lng: lng,
+            radius_km: radiusKm,
+            sort: "DIST"
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          for (const p of (data.results || [])) {
+            if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+            if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+            if (!allShinys.has(p.encounter_id)) {
+              const dist =
+                p.apx_lat != null && p.apx_long != null
+                  ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
+                  : p.distance_km ?? null;
+
+              allShinys.set(p.encounter_id, {
+                ...p,
+                shiny: false,
+                raw_iv: "15/15/15",
+                iv_percent: 100,
+                exact_coords: null,
+                distance_km: dist
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Aviso no /search 100% IV local:", err);
+      }
+
+      // 3. Shinys de Alto IV (90%+) no Raio para enriquecer o farm local
+      try {
+        totalQueries++;
+        const token = POGO_TOKENS[2 % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
+        const res = await fetch(`${BASE_API_URL}/search`, {
+          method: "POST",
+          headers: getRandomSpoofedHeaders(token),
+          body: JSON.stringify({
+            shiny_only: true,
+            shiny_account: trainerCode,
+            iv_mode: "percent",
+            iv_percent_min: 90,
+            center_lat: lat,
+            center_lng: lng,
+            radius_km: radiusKm,
+            sort: "IV"
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          for (const p of (data.results || [])) {
+            if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+            if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+            if (!allShinys.has(p.encounter_id)) {
+              const dist =
+                p.apx_lat != null && p.apx_long != null
+                  ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
+                  : p.distance_km ?? null;
+
+              allShinys.set(p.encounter_id, {
+                ...p,
+                shiny: true, // Brilha para o usuário!
+                exact_coords: null,
+                distance_km: dist
+              });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Aviso no /search 90%+ shiny local:", err);
+      }
+
+      // 4. Varredura no /map/lookup da área local com ordenação por IV
       try {
         const deltaLat = radiusKm / 111.0;
         const deltaLng = radiusKm / (111.0 * Math.max(0.1, Math.cos((lat * Math.PI) / 180.0)));
@@ -236,8 +379,6 @@ export async function POST(req: NextRequest) {
 
         for (const batch of tileResults) {
           for (const p of batch) {
-            // Trava estrita de Shundo puro
-            if (p.iv_percent !== 100 && p.raw_iv !== "15/15/15") continue;
             if (p.despawn_at_ms && p.despawn_at_ms <= now) continue;
             if (allShinys.has(p.encounter_id)) continue;
             if (hiddenSpecies.includes(p.pokemon_name)) continue;
@@ -261,8 +402,8 @@ export async function POST(req: NextRequest) {
               cp: p.cp || 0,
               level: p.level || 0,
               location: p.apx_lat ? `Região (${p.apx_lat.toFixed(3)}, ${p.apx_long.toFixed(3)})` : "Localização informada",
-              raw_iv: "15/15/15",
-              iv_percent: 100,
+              raw_iv: p.raw_iv || "15/15/15",
+              iv_percent: p.iv_percent || 100,
               gender: p.gender || "Genderless",
               size: p.size || "M",
               weather_boosted: false,
@@ -285,8 +426,21 @@ export async function POST(req: NextRequest) {
         console.warn("Aviso no /map/lookup Shundo Local:", mapErr);
       }
 
+      // Ordenação: Shundos Confirmados (shiny: true && iv: 100) primeiro, depois 100% IV Hundos, depois mais próximos
       const finalList = Array.from(allShinys.values())
-        .sort((a, b) => (a.distance_km ?? 9999) - (b.distance_km ?? 9999))
+        .sort((a, b) => {
+          const aIsShundo = a.shiny && a.iv_percent === 100;
+          const bIsShundo = b.shiny && b.iv_percent === 100;
+          if (aIsShundo && !bIsShundo) return -1;
+          if (!aIsShundo && bIsShundo) return 1;
+
+          const aIsHundo = a.iv_percent === 100;
+          const bIsHundo = b.iv_percent === 100;
+          if (aIsHundo && !bIsHundo) return -1;
+          if (!aIsHundo && bIsHundo) return 1;
+
+          return (a.distance_km ?? 9999) - (b.distance_km ?? 9999);
+        })
         .slice(0, targetCount);
 
       return NextResponse.json({
@@ -455,9 +609,12 @@ export async function POST(req: NextRequest) {
       results: finalList
     });
   } catch (error: any) {
-    console.error("Erro interno no /api/hunt:", error);
+    console.error("Erro crítico em /api/hunt:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Erro interno no servidor ao caçar shinys." },
+      {
+        success: false,
+        error: error.message || "Erro interno ao processar a busca de Pokémons."
+      },
       { status: 500 }
     );
   }

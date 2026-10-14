@@ -205,7 +205,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
             <h3 className="text-sm font-semibold text-zinc-100 truncate">
               {pokemon.pokemon_name}
             </h3>
-            {isShundo && (
+            {isShundo ? (
               <span
                 className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 ${
                   pokemon.shiny
@@ -213,9 +213,13 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
                     : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                 }`}
               >
-                {pokemon.shiny ? "✨ SHUNDO" : "💎 100% IV"}
+                {pokemon.shiny ? "✨ SHUNDO CONFIRMADO" : "💎 100% IV (HUNDO)"}
               </span>
-            )}
+            ) : pokemon.shiny && pokemon.iv_percent >= 90 ? (
+              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-amber-500/15 text-amber-300 border-amber-500/30">
+                ✨ SHINY {pokemon.iv_percent}%
+              </span>
+            ) : null}
             <span className="text-[11px] font-mono text-zinc-400">
               Nv. {pokemon.level}
             </span>

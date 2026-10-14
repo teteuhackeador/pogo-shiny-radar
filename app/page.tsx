@@ -193,13 +193,23 @@ export default function Home() {
     }
   }, [showToast]);
 
-  // Execução do Scanner de Shinys via /api/hunt
-  const handleExecuteScan = async () => {
+  // Execução do Scanner de Shinys via /api/hunt com suporte a override imediato
+  const handleExecuteScan = async (overrideParams?: {
+    mode?: RadarHuntMode;
+    overrideLat?: number;
+    overrideLng?: number;
+    overrideRadius?: number;
+  }) => {
+    const activeMode = overrideParams?.mode || huntMode;
+    const activeLat = overrideParams?.overrideLat ?? lat;
+    const activeLng = overrideParams?.overrideLng ?? lng;
+    const activeRadius = overrideParams?.overrideRadius ?? radiusKm;
+
     setIsLoading(true);
     setErrorMessage(null);
 
     try {
-      localStorage.setItem("pogo_last_coords", JSON.stringify({ lat, lng }));
+      localStorage.setItem("pogo_last_coords", JSON.stringify({ lat: activeLat, lng: activeLng }));
     } catch {}
 
     try {
@@ -207,11 +217,11 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lat,
-          lng,
-          radiusKm,
+          lat: activeLat,
+          lng: activeLng,
+          radiusKm: activeRadius,
           targetCount,
-          huntMode,
+          huntMode: activeMode,
           hiddenSpecies: Array.from(hiddenSpecies)
         })
       });
@@ -224,13 +234,22 @@ export default function Home() {
         return;
       }
 
-      setAllPokemons(data.results || []);
+      const results = data.results || [];
+      setAllPokemons(results);
 
-      let countMsg = `${data.results?.length || 0} shinys encontrados.`;
-      if (huntMode === "shundo_local") {
-        countMsg = `${data.results?.length || 0} Shundos encontrados no raio de ${radiusKm}km!`;
-      } else if (huntMode === "shundo_global") {
-        countMsg = `${data.results?.length || 0} Shundos confirmados ativos no mundo!`;
+      let countMsg = `${results.length} shinys encontrados.`;
+      if (activeMode === "shundo_local") {
+        const shundos = results.filter((p) => p.shiny && p.iv_percent === 100).length;
+        const hundos = results.filter((p) => !p.shiny && p.iv_percent === 100).length;
+        if (shundos > 0) {
+          countMsg = `${shundos} Shundo(s) ✨ e ${hundos} Hundos 100% IV no raio de ${activeRadius}km!`;
+        } else {
+          countMsg = `0 Shundos puros no raio. Exibindo ${results.length} Hundos 100% IV e Shinys locais!`;
+        }
+      } else if (activeMode === "shundo_global") {
+        const shundos = results.filter((p) => p.shiny && p.iv_percent === 100).length;
+        const hundos = results.filter((p) => !p.shiny && p.iv_percent === 100).length;
+        countMsg = `${shundos} Shundos confirmados ✨ e ${hundos} Hundos 100% IV no mundo!`;
       }
       showToast(countMsg);
     } catch (err: any) {
@@ -238,6 +257,11 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleHuntModeChange = (newMode: RadarHuntMode) => {
+    setHuntMode(newMode);
+    handleExecuteScan({ mode: newMode });
   };
 
   // Contagem de cada espécie disponível nos resultados brutos da busca
@@ -277,21 +301,29 @@ export default function Home() {
           if (!matchName && !matchLoc) return false;
         }
 
-        // Se estiver em modo Shundo (local ou global): SÓ aceita 100% IV e SÓ aceita quem brilha Shiny!
-        if (huntMode !== "local_shiny") {
-          if (p.iv_percent < 100 && p.raw_iv !== "15/15/15") return false;
-          if (!p.shiny) return false;
+        // Filtro por IV no modo normal local_shiny
+        if (huntMode === "local_shiny") {
+          if (ivFilter === "50" && p.iv_percent < 50) return false;
+          if (ivFilter === "80" && p.iv_percent < 80) return false;
+          if (ivFilter === "90" && p.iv_percent < 90) return false;
+          if (ivFilter === "100" && p.iv_percent < 100) return false;
         }
-
-        // Filtro por IV no modo normal
-        if (ivFilter === "50" && p.iv_percent < 50) return false;
-        if (ivFilter === "80" && p.iv_percent < 80) return false;
-        if (ivFilter === "90" && p.iv_percent < 90) return false;
-        if (ivFilter === "100" && p.iv_percent < 100) return false;
 
         return true;
       })
       .sort((a, b) => {
+        // Shundos confirmados (shiny: true && iv: 100) SEMPRE têm prioridade absoluta no topo
+        const aIsConfirmedShundo = a.shiny && a.iv_percent === 100;
+        const bIsConfirmedShundo = b.shiny && b.iv_percent === 100;
+        if (aIsConfirmedShundo && !bIsConfirmedShundo) return -1;
+        if (!aIsConfirmedShundo && bIsConfirmedShundo) return 1;
+
+        // 100% IV Hundos vêm logo em seguida
+        const aIsHundo = a.iv_percent === 100;
+        const bIsHundo = b.iv_percent === 100;
+        if (aIsHundo && !bIsHundo) return -1;
+        if (!aIsHundo && bIsHundo) return 1;
+
         if (sortOption === "distance") {
           const getDist = (p: PokemonSpawn): number => {
             const rev = revealedCoordsMap[p.encounter_id] || p.exact_coords;
@@ -355,8 +387,8 @@ export default function Home() {
         }}
         onRadiusChange={(r) => setRadiusKm(r)}
         onTargetCountChange={(c) => setTargetCount(c)}
-        onHuntModeChange={(m) => setHuntMode(m)}
-        onExecuteScan={handleExecuteScan}
+        onHuntModeChange={handleHuntModeChange}
+        onExecuteScan={() => handleExecuteScan()}
       />
 
       {/* Mensagem de Erro */}
