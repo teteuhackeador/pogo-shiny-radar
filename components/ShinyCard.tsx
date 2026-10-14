@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { PokemonSpawn } from "@/types/pokemon";
-import { getPokemonSpriteUrl, getPokemonFallbackSprite } from "@/lib/constants";
+import { getPokemonSpriteUrl, getPokemonFallbackSprite, calculateDistanceKm } from "@/lib/constants";
 import {
   Clock,
   Copy,
@@ -237,7 +237,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
           />
         </div>
 
-        {/* Metadados: Tempo restante e Local */}
+        {/* Metadados: Tempo restante, Distância e Local */}
         <div className="flex-1 min-w-0 text-xs">
           <div className="flex items-center gap-1.5 mb-1 font-mono">
             <Clock className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
@@ -254,8 +254,25 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-1 text-[11px] text-zinc-400 truncate">
+          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 truncate">
             <MapPin className="w-3 h-3 text-zinc-500 flex-shrink-0" />
+            {(() => {
+              let dist: number | null = null;
+              if (exactCoords && coordsCenter) {
+                const [cLat, cLng] = exactCoords.split(",").map(Number);
+                if (!isNaN(cLat) && !isNaN(cLng)) {
+                  dist = calculateDistanceKm(coordsCenter.lat, coordsCenter.lng, cLat, cLng);
+                }
+              } else if (pokemon.distance_km != null) {
+                dist = pokemon.distance_km;
+              }
+              return dist != null ? (
+                <>
+                  <span className="text-emerald-400 font-mono font-medium">{dist} km</span>
+                  <span className="text-zinc-600">•</span>
+                </>
+              ) : null;
+            })()}
             <span className="truncate">{pokemon.location || "Localização informada"}</span>
           </div>
         </div>

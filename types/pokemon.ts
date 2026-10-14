@@ -20,6 +20,7 @@ export interface PokemonSpawn {
   despawn_verified: boolean;
   reveal_code: string;
   distance_km?: number | null;
+  distance_rank?: number | null;
   pvp?: any;
   shiny: boolean;
   background: boolean;

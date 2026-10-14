@@ -22,88 +22,111 @@ export async function POST(req: NextRequest) {
     }
 
     const allShinys = new Map<string, PokemonSpawn>();
-    const blacklistPokemonIds: number[] = [];
-    let round = 1;
-    const maxRounds = 8;
+    const now = Date.now();
+    let totalQueries = 0;
+    let distRankCounter = 1;
 
-    // Busca autêntica via /search com Blacklist Recursiva
-    // ATENÇÃO: Nunca usar apx_lat do /map/lookup porque o site introduz um desvio
-    // proposital de mais de 100 metros (apx = approximate) que faz o jogador errar o spawn!
-    // As coordenadas verdadeiras e exatas são obtidas exclusivamente via /reveal!
-    while (allShinys.size < targetCount && round <= maxRounds) {
-      const searchPayload = {
-        shiny_only: true,
-        shiny_account: trainerCode,
-        center_lat: lat,
-        center_lng: lng,
-        radius_km: radiusKm,
-        sort: "DIST",
-        blacklist_pokemon_ids: blacklistPokemonIds,
-        background_only: false,
-        pvp_mode: false,
-        pokemon_ids: [],
-        species_forms: [],
-        location: null,
-        cp_min: null,
-        cp_max: null,
-        level_min: null,
-        level_max: null,
-        iv_mode: "percent",
-        iv_percent_min: null,
-        iv_percent_max: null,
-        sizes: [],
-        forms: [],
-        gender: null,
-        boosted: null,
-        weather_id: null,
-        min_ttl: null,
-        blacklist_species_forms: [],
-        blacklist_forms: []
-      };
+    // Estratégia Multi-Pass Inteligente:
+    // O site Pogocoordinates só permite filtrar por espécie (blacklist_pokemon_ids).
+    // Se usássemos apenas uma busca com blacklist, cada espécie só apareceria UMA VEZ
+    // (o que limitava artificialmente o resultado a ~20-22 alvos, que é o número de espécies diferentes no raio).
+    // Ao alternar os métodos de ordenação do backend da API (DIST, DSP, IV, CP), conseguimos
+    // capturar múltiplas instâncias da mesma espécie (ex: 4 Ponytas, 5 Cacneas, etc.) e contornar esse teto!
+    const sortPasses = [
+      { sort: "DIST", maxRounds: 3 },
+      { sort: "DSP", maxRounds: 3 },
+      { sort: "IV", maxRounds: 2 },
+      { sort: "CP", maxRounds: 2 }
+    ];
 
-      const res = await fetch(`${BASE_API_URL}/search`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${authToken}`
-        },
-        body: JSON.stringify(searchPayload)
-      });
+    for (const pass of sortPasses) {
+      if (allShinys.size >= targetCount) break;
 
-      if (!res.ok) {
-        break;
-      }
+      const passBlacklist: number[] = [];
 
-      const data = await res.json();
-      const results: PokemonSpawn[] = data.results || [];
+      for (let round = 1; round <= pass.maxRounds; round++) {
+        if (allShinys.size >= targetCount) break;
 
-      if (results.length === 0) {
-        break;
-      }
+        const searchPayload = {
+          shiny_only: true,
+          shiny_account: trainerCode,
+          center_lat: lat,
+          center_lng: lng,
+          radius_km: radiusKm,
+          sort: pass.sort,
+          blacklist_pokemon_ids: passBlacklist,
+          background_only: false,
+          pvp_mode: false,
+          pokemon_ids: [],
+          species_forms: [],
+          location: null,
+          cp_min: null,
+          cp_max: null,
+          level_min: null,
+          level_max: null,
+          iv_mode: "percent",
+          iv_percent_min: null,
+          iv_percent_max: null,
+          sizes: [],
+          forms: [],
+          gender: null,
+          boosted: null,
+          weather_id: null,
+          min_ttl: null,
+          blacklist_species_forms: [],
+          blacklist_forms: []
+        };
 
-      let newInThisRound = 0;
-      for (const p of results) {
-        if (!allShinys.has(p.encounter_id)) {
-          allShinys.set(p.encounter_id, {
-            ...p,
-            shiny: true,
-            exact_coords: null // Será revelado com precisão milimétrica via /reveal!
-          });
-          newInThisRound++;
+        totalQueries++;
+        const res = await fetch(`${BASE_API_URL}/search`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${authToken}`
+          },
+          body: JSON.stringify(searchPayload)
+        });
+
+        if (!res.ok) {
+          break;
         }
 
-        if (!blacklistPokemonIds.includes(p.pokemon_id)) {
-          blacklistPokemonIds.push(p.pokemon_id);
+        const data = await res.json();
+        const results: PokemonSpawn[] = data.results || [];
+
+        if (results.length === 0) {
+          break;
         }
-      }
 
-      if (newInThisRound === 0) {
-        break;
-      }
+        let newInThisRound = 0;
+        for (const p of results) {
+          // Descartar imediatamente spawns que já expiraram no servidor
+          if (p.despawn_at) {
+            const despawnMs = new Date(p.despawn_at).getTime();
+            if (despawnMs <= now) continue;
+          }
 
-      round++;
-      if (allShinys.size < targetCount && round <= maxRounds) {
-        await new Promise((r) => setTimeout(r, 200));
+          if (!allShinys.has(p.encounter_id)) {
+            allShinys.set(p.encounter_id, {
+              ...p,
+              shiny: true,
+              exact_coords: null,
+              distance_rank: pass.sort === "DIST" ? distRankCounter++ : 999
+            });
+            newInThisRound++;
+          }
+
+          if (!passBlacklist.includes(p.pokemon_id)) {
+            passBlacklist.push(p.pokemon_id);
+          }
+        }
+
+        if (newInThisRound === 0) {
+          break;
+        }
+
+        // Delay de 250ms para evitar rate-limit de burst na API
+        await new Promise((r) => setTimeout(r, 250));
       }
     }
 
@@ -112,7 +135,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       count: finalList.length,
-      rounds: round - 1,
+      rounds: totalQueries,
       results: finalList
     });
   } catch (error: any) {

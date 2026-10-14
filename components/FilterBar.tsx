@@ -69,6 +69,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             onChange={(e) => onSortOptionChange(e.target.value as SortOption)}
             className="w-full bg-[#18181b] border border-[#27272a] focus:border-zinc-500 rounded-xl px-2.5 py-1.5 text-xs text-zinc-200 outline-none cursor-pointer"
           >
+            <option value="distance">Ordem: Mais Perto (Distância)</option>
             <option value="despawn">Ordem: Despawn</option>
             <option value="iv_desc">Ordem: Maior IV</option>
             <option value="cp_desc">Ordem: Maior CP</option>

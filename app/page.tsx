@@ -11,6 +11,7 @@ import {
   SortOption,
   HuntResponse
 } from "@/types/pokemon";
+import { calculateDistanceKm } from "@/lib/constants";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 export default function Home() {
@@ -36,7 +37,15 @@ export default function Home() {
   // Filtros de UI
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [ivFilter, setIvFilter] = useState<IvFilterOption>("all");
-  const [sortOption, setSortOption] = useState<SortOption>("despawn");
+  const [sortOption, setSortOption] = useState<SortOption>("distance");
+  const [currentTime, setCurrentTime] = useState<number>(0);
+
+  // Ticker a cada 1 segundo para expurgar spawns expirados em tempo real
+  useEffect(() => {
+    setCurrentTime(Date.now());
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Toast discreto flutuante
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -191,6 +200,12 @@ export default function Home() {
       .filter((p) => {
         const isCap = capturedIds.has(p.encounter_id);
 
+        // Ocultar automaticamente os que já sumiram / expiraram
+        if (p.despawn_at && currentTime > 0) {
+          const despawnMs = new Date(p.despawn_at).getTime();
+          if (despawnMs <= currentTime) return false;
+        }
+
         // Filtro Ocultar Pegos
         if (hideCaptured && isCap) return false;
 
@@ -211,6 +226,22 @@ export default function Home() {
         return true;
       })
       .sort((a, b) => {
+        if (sortOption === "distance") {
+          const coordsA = revealedCoordsMap[a.encounter_id] || a.exact_coords;
+          const coordsB = revealedCoordsMap[b.encounter_id] || b.exact_coords;
+          if (coordsA && coordsB) {
+            const [latA, lngA] = coordsA.split(',').map(Number);
+            const [latB, lngB] = coordsB.split(',').map(Number);
+            const distA = calculateDistanceKm(lat, lng, latA, lngA);
+            const distB = calculateDistanceKm(lat, lng, latB, lngB);
+            return distA - distB;
+          }
+          if (coordsA && !coordsB) return -1;
+          if (!coordsA && coordsB) return 1;
+          const rankA = a.distance_rank ?? 999;
+          const rankB = b.distance_rank ?? 999;
+          return rankA - rankB;
+        }
         if (sortOption === "despawn") {
           const timeA = new Date(a.despawn_at).getTime();
           const timeB = new Date(b.despawn_at).getTime();
@@ -227,7 +258,7 @@ export default function Home() {
         }
         return 0;
       });
-  }, [allPokemons, capturedIds, hideCaptured, searchQuery, ivFilter, sortOption]);
+  }, [allPokemons, capturedIds, hideCaptured, searchQuery, ivFilter, sortOption, currentTime, revealedCoordsMap, lat, lng]);
 
   const capturedCount = useMemo(() => {
     return allPokemons.filter((p) => capturedIds.has(p.encounter_id)).length;
