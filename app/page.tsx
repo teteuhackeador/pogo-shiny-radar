@@ -338,7 +338,7 @@ export default function Home() {
 
   return (
     <main className="w-full max-w-lg mx-auto px-3 sm:px-4 py-3 min-h-screen pb-16">
-      {/* Cabeçalho com Alerta de Teleport Cooldown de 2h */}
+      {/* Cabeçalho */}
       <Header cooldownSeconds={cooldownSeconds} totalFound={allPokemons.length} />
 
       {/* Painel de Coordenadas e Scan com os 3 Modos */}

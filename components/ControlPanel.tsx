@@ -165,7 +165,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <div>
           <label className="block text-[11px] font-medium text-zinc-400 mb-1">
             {huntMode === "shundo_global"
-              ? "Sua Posição (para estimar cooldown de teleport)"
+              ? "Sua Posição (para cálculo de distância)"
               : "Coordenadas Centrais (Latitude, Longitude)"}
           </label>
           <div className="flex items-center gap-2">
