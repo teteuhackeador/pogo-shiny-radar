@@ -226,14 +226,21 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <div className="grid grid-cols-2 gap-2.5 pt-1">
           <div>
             <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1">
-              <span>{huntMode === "shundo_global" ? "Área" : "Raio"}</span>
+              <span>
+                {huntMode === "shundo_global" || huntMode === "hundo_global" || huntMode === "shiny_global"
+                  ? "Área"
+                  : "Raio"}
+              </span>
               <span className="font-mono text-zinc-200 font-semibold">
-                {huntMode === "shundo_global" ? "Mundial" : `${radiusKm}km`}
+                {huntMode === "shundo_global" || huntMode === "hundo_global" || huntMode === "shiny_global"
+                  ? "Global"
+                  : `${radiusKm}km`}
               </span>
             </div>
-            {huntMode === "shundo_global" ? (
-              <div className="py-1 px-2.5 rounded-lg text-[11px] font-medium bg-amber-950/20 text-amber-300 border border-amber-800/40 text-center truncate">
-                Planeta Terra 🌐
+            {huntMode === "shundo_global" || huntMode === "hundo_global" || huntMode === "shiny_global" ? (
+              <div className="py-1 px-2.5 rounded-lg text-[11px] font-medium bg-zinc-900 text-zinc-300 border border-zinc-800 text-center truncate flex items-center justify-center gap-1.5">
+                <Globe className="w-3 h-3 text-zinc-400" />
+                <span>Cobertura Mundial</span>
               </div>
             ) : (
               <div className="grid grid-cols-4 gap-1">

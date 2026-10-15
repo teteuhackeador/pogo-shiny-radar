@@ -12,7 +12,10 @@ import {
   CheckSquare,
   Square,
   MapPin,
-  EyeOff
+  EyeOff,
+  Crown,
+  Sparkles,
+  Swords
 } from "lucide-react";
 
 interface ShinyCardProps {
@@ -206,20 +209,22 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
               {pokemon.pokemon_name}
             </h3>
             {isShundo ? (
-              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm">
-                👑 SHUNDO 100%
+              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded border flex items-center gap-1 bg-amber-500/15 text-amber-300 border-amber-500/40 shadow-sm tracking-wider">
+                <Crown className="w-3 h-3 text-amber-400" />
+                <span>SHUNDO 100%</span>
               </span>
             ) : pokemon.shiny ? (
-              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-zinc-800 text-amber-300 border-zinc-700">
-                ✨ SHINY {pokemon.iv_percent}%
+              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded border flex items-center gap-1 bg-zinc-800/90 text-amber-300 border-zinc-700 tracking-wider">
+                <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+                <span>SHINY {pokemon.iv_percent}%</span>
               </span>
             ) : pokemon.iv_percent === 100 ? (
-              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-red-500/20 text-red-300 border-red-500/40">
-                💯 100% IV
+              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded border flex items-center gap-1 bg-red-500/15 text-red-300 border-red-500/40 tracking-wider">
+                <span>100% IV</span>
               </span>
             ) : (
               <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-zinc-800 text-zinc-300 border-zinc-700">
-                {pokemon.iv_percent}% IV
+                <span>{pokemon.iv_percent}% IV</span>
               </span>
             )}
             <span className="text-[11px] font-mono text-zinc-400">
@@ -340,8 +345,9 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
           </div>
 
           {(pokemon.fast_move || pokemon.charge_move) && (
-            <div className="text-[10px] text-zinc-500 font-mono mt-0.5 truncate">
-              ⚔️ {pokemon.fast_move || "—"} / {pokemon.charge_move || "—"}
+            <div className="text-[10px] text-zinc-400 font-mono mt-0.5 truncate flex items-center gap-1.5">
+              <Swords className="w-2.5 h-2.5 text-zinc-500 flex-shrink-0" />
+              <span>{pokemon.fast_move || "—"} / {pokemon.charge_move || "—"}</span>
             </div>
           )}
         </div>
