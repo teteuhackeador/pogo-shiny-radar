@@ -31,7 +31,12 @@ export interface PokemonSpawn {
   is_captured?: boolean;
 }
 
-export type RadarHuntMode = 'local_shiny' | 'shundo_local' | 'shundo_global';
+export type RadarHuntMode =
+  | 'local_shiny'
+  | 'shundo_local'
+  | 'shundo_global'
+  | 'hundo_global'
+  | 'shiny_global';
 
 export interface HuntRequestPayload {
   lat: number;

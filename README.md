@@ -6,9 +6,14 @@
 
 ## 🌟 Principais Funcionalidades
 
-1. **Bypass de Limite via Blacklist Recursiva (`/api/hunt`)**:
-   - A API original limita as respostas a apenas 10 pokémons por consulta.
-   - O backend do PoGo Shiny Radar executa rodadas consecutivas de busca inserindo os IDs encontrados na `blacklist_pokemon_ids`, acumulando dezenas de alvos em tempo real (10, 20, 35, 50+).
+1. **Bypass de Limite via Multi-Slice Level Engine Concorrente (`/api/hunt`)**:
+   - A API original impõe um cap severo de apenas 10 pokémons por consulta no plano gratuito.
+   - O backend do PoGo Shiny Radar agora executa **8 buscas fatiadas por faixas de nível em paralelo absoluto** (`Promise.all`), capturando de **80 a 100+ spawns ativos simultaneamente** em menos de 1.5 segundos.
+   - Modos revolucionários integrados:
+     * 👑 **100% IV Global**: Lista todos os Hundos (100% IV) ativos no planeta, destacando Shundos no topo!
+     * 🚨 **Shundo Global**: Varredura mundial focada estritamente em Shundos 100% IV da sua conta.
+     * ✨ **Meus Shinies**: Lista todos os 50 a 80+ Shinies ativos da sua conta no mundo, ordenados por IV decrescente!
+     * 📍 **Shinies (Raio)** e 🎯 **Shundo (Raio)**: Varredura local fatiada no raio do ponto selecionado.
 
 2. **Arquitetura de Lazy Reveal com Tratamento de Cooldown (`/api/reveal`)**:
    - A rota de revelação de coordenadas exatas possui um rate limit de 10 chamadas a cada 3 minutos (HTTP 429).

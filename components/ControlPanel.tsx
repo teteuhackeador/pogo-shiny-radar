@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { GEO_PRESETS, GeoPreset } from "@/lib/constants";
 import { RadarHuntMode } from "@/types/pokemon";
-import { Navigation, Loader2, Sparkles, Globe, Compass, Target } from "lucide-react";
+import { Navigation, Loader2, Sparkles, Globe, Compass, Target, Crown } from "lucide-react";
 
 interface ControlPanelProps {
   lat: number;
@@ -91,8 +91,47 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
   return (
     <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-3 sm:p-4 shadow-sm text-zinc-100 space-y-3">
-      {/* 3 Modos de Caça Claros e Diretos */}
-      <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-[#0e0e11] border border-[#27272a]">
+      {/* Modos de Caça Claros e Diretos */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1.5 rounded-xl bg-[#0e0e11] border border-[#27272a]">
+        <button
+          type="button"
+          onClick={() => onHuntModeChange("hundo_global")}
+          className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-[11px] font-semibold transition-all col-span-2 sm:col-span-1 ${
+            huntMode === "hundo_global"
+              ? "bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm"
+              : "text-zinc-400 hover:text-amber-300/80"
+          }`}
+        >
+          <Crown className="w-3.5 h-3.5 mb-0.5 text-amber-400" />
+          <span>100% IV Global</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onHuntModeChange("shundo_global")}
+          className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-[11px] font-semibold transition-all ${
+            huntMode === "shundo_global"
+              ? "bg-amber-950/40 text-amber-300 border border-amber-600/60 shadow-sm"
+              : "text-zinc-400 hover:text-amber-300/80"
+          }`}
+        >
+          <Globe className="w-3.5 h-3.5 mb-0.5 text-amber-400" />
+          <span>Shundo Global</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onHuntModeChange("shiny_global")}
+          className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-[11px] font-semibold transition-all ${
+            huntMode === "shiny_global"
+              ? "bg-emerald-950/40 text-emerald-300 border border-emerald-500/60 shadow-sm"
+              : "text-zinc-400 hover:text-emerald-300/80"
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 mb-0.5 text-emerald-400" />
+          <span>Meus Shinies</span>
+        </button>
+
         <button
           type="button"
           onClick={() => onHuntModeChange("local_shiny")}
@@ -117,19 +156,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         >
           <Target className="w-3.5 h-3.5 mb-0.5 text-amber-400" />
           <span>Shundo (Raio)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onHuntModeChange("shundo_global")}
-          className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-[11px] font-semibold transition-all ${
-            huntMode === "shundo_global"
-              ? "bg-amber-950/40 text-amber-300 border border-amber-600/60 shadow-sm"
-              : "text-zinc-400 hover:text-amber-300/80"
-          }`}
-        >
-          <Globe className="w-3.5 h-3.5 mb-0.5 text-amber-400" />
-          <span>Shundo (Global)</span>
         </button>
       </div>
 

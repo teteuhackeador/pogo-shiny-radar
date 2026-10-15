@@ -207,11 +207,19 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
             </h3>
             {isShundo ? (
               <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-sm">
-                ✨ SHUNDO (15/15/15)
+                👑 SHUNDO 100%
               </span>
-            ) : (
+            ) : pokemon.shiny ? (
               <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-zinc-800 text-amber-300 border-zinc-700">
                 ✨ SHINY {pokemon.iv_percent}%
+              </span>
+            ) : pokemon.iv_percent === 100 ? (
+              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-red-500/20 text-red-300 border-red-500/40">
+                💯 100% IV
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-zinc-800 text-zinc-300 border-zinc-700">
+                {pokemon.iv_percent}% IV
               </span>
             )}
             <span className="text-[11px] font-mono text-zinc-400">
@@ -330,6 +338,12 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
             })()}
             <span className="truncate">{pokemon.location || (pokemon.apx_lat ? `Região de ${pokemon.apx_lat.toFixed(3)}, ${pokemon.apx_long?.toFixed(3)}` : "Localização informada")}</span>
           </div>
+
+          {(pokemon.fast_move || pokemon.charge_move) && (
+            <div className="text-[10px] text-zinc-500 font-mono mt-0.5 truncate">
+              ⚔️ {pokemon.fast_move || "—"} / {pokemon.charge_move || "—"}
+            </div>
+          )}
         </div>
       </div>
 

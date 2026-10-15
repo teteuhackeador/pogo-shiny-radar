@@ -238,7 +238,12 @@ export default function Home() {
       setAllPokemons(results);
 
       let countMsg = `${results.length} shinys encontrados.`;
-      if (activeMode === "shundo_local") {
+      if (activeMode === "hundo_global") {
+        const shundosFound = results.filter((s) => s.shiny).length;
+        countMsg = `${results.length} Hundos (100% IV) no mundo! (${shundosFound} Shundo(s) pro seu código!)`;
+      } else if (activeMode === "shiny_global") {
+        countMsg = `${results.length} Shinies ativos confirmados pra sua conta no mundo!`;
+      } else if (activeMode === "shundo_local") {
         countMsg = `${results.length} Shundo(s) (15/15/15) encontrados no raio de ${activeRadius}km!`;
       } else if (activeMode === "shundo_global") {
         countMsg = `${results.length} Shundo(s) (15/15/15) confirmados no mundo!`;
