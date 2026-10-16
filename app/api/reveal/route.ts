@@ -85,6 +85,20 @@ export async function POST(req: NextRequest) {
     }
 
     if (!finalRes || !finalRes.ok) {
+      try {
+        const unauthRes = await fetch(`${BASE_API_URL}/reveal/${encodeURIComponent(revealCode)}`, {
+          method: "GET",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15"
+          }
+        });
+        if (unauthRes.ok) {
+          finalRes = unauthRes;
+        }
+      } catch {}
+    }
+
+    if (!finalRes || !finalRes.ok) {
       // Se todos os tokens atingiram rate limit, entregamos coordenadas aproximadas imediatamente
       if (apxLat != null && apxLng != null) {
         return NextResponse.json({

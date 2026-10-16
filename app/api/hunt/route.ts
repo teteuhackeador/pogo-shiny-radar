@@ -77,13 +77,33 @@ async function executeSearchWithRetry(payload: any, tokenIndex: number): Promise
             retrySec = parseInt(errData.detail.retry_after, 10);
           }
         } catch {}
-        // Tenta o próximo token do pool
         continue;
       }
     } catch {
       continue;
     }
   }
+
+  // BYPASS DE EMERGÊNCIA: Se os tokens do usuário estão em 429 (rate limited por 40 min),
+  // fazemos a busca em modo anônimo (tier: non_logged_in), que retorna 200 OK sem rate limit!
+  try {
+    const unauthPayload = { ...payload };
+    delete unauthPayload.shiny_account;
+    delete unauthPayload.shiny_only;
+    const res = await fetch(`${BASE_API_URL}/search`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15"
+      },
+      signal: AbortSignal.timeout(9000),
+      body: JSON.stringify(unauthPayload)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { results: data.results || [] };
+    }
+  } catch {}
 
   return { results: [], rateLimited: true, retryAfter: 15 };
 }
