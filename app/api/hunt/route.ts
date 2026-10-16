@@ -38,14 +38,18 @@ interface SliceConfig {
 }
 
 const BALANCED_SLICES: SliceConfig[] = [
-  { min: 1, max: 8, sort: "DSP" },
-  { min: 9, max: 15, sort: "DSP" },
-  { min: 16, max: 22, sort: "DSP" },
-  { min: 23, max: 28, sort: "DSP" },
-  { min: 29, max: 32, sort: "DSP" },
-  { min: 33, max: 35, sort: "DSP" },
-  { min: 15, max: 35, sort: "CP" }, // Injeta os maiores CPs do mundo
-  { min: 1, max: 20, sort: "CP" }
+  { min: 1, max: 4, sort: "DSP" },
+  { min: 5, max: 8, sort: "DSP" },
+  { min: 9, max: 13, sort: "DSP" },
+  { min: 14, max: 18, sort: "DSP" },
+  { min: 19, max: 23, sort: "DSP" },
+  { min: 24, max: 27, sort: "DSP" },
+  { min: 28, max: 31, sort: "DSP" },
+  { min: 32, max: 35, sort: "DSP" },
+  { min: 20, max: 35, sort: "CP" }, // Maiores CPs do mundo
+  { min: 1, max: 19, sort: "CP" },
+  { min: 1, max: 35, sort: "DSP" }, // Geral mais recentes
+  { min: 1, max: 35, sort: "IV" }
 ];
 
 // Helper para fetch com timeout e rotação de token
@@ -148,16 +152,17 @@ export async function POST(req: NextRequest) {
         if (idx > 0) {
           await new Promise((r) => setTimeout(r, idx * 120));
         }
-        const payload = {
+        const payload: any = {
           shiny_only: false,
-          shiny_account: "1000", // Conta neutra/dummy: blindagem total contra rate limit de 40 min na conta do LO
           level_min: slice.min,
           level_max: slice.max,
           iv_mode: "percent",
           iv_percent_min: 100,
-          iv_percent_max: 100,
-          sort: slice.sort || "DSP"
+          iv_percent_max: 100
         };
+        if (slice.sort) {
+          payload.sort = slice.sort;
+        }
         return executeSearchWithRetry(payload, idx);
       });
 
