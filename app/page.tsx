@@ -21,7 +21,7 @@ export default function Home() {
   const [lng, setLng] = useState<number>(-79.7399437);
   const [radiusKm, setRadiusKm] = useState<number>(50);
   const [targetCount, setTargetCount] = useState<number>(100);
-  const [huntMode, setHuntMode] = useState<RadarHuntMode>("local_shiny");
+  const [huntMode, setHuntMode] = useState<RadarHuntMode>("hundo_global");
 
   // Estados de Busca e Dados
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -261,6 +261,12 @@ export default function Home() {
     handleExecuteScan({ mode: newMode });
   };
 
+  // Disparo automático do primeiro scan (100% IV Global) ao abrir o radar
+  useEffect(() => {
+    handleExecuteScan({ mode: "hundo_global" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Contagem de cada espécie disponível nos resultados brutos da busca
   const availableSpeciesList: SpeciesCountItem[] = useMemo(() => {
     const counts = new Map<string, number>();
@@ -278,8 +284,8 @@ export default function Home() {
       .filter((p) => {
         const isCap = capturedIds.has(p.encounter_id);
 
-        // REGRA DE OURO: SE NÃO FOR SHINY, NUNCA PASSA!
-        if (!p.shiny) return false;
+        // Se o modo NÃO for 100% IV Global (hundo_global), exige que seja shiny!
+        if (huntMode !== "hundo_global" && !p.shiny) return false;
 
         // Ocultar automaticamente os que já sumiram / expiraram
         if (p.despawn_at && currentTime > 0) {
@@ -301,13 +307,18 @@ export default function Home() {
           if (!matchName && !matchLoc) return false;
         }
 
-        // SE O MODO FOR SHUNDO (LOCAL OU GLOBAL): EXATAMENTE 100% IV (15/15/15)!
+        // Se o modo for Shundo (local ou global): estritamente 100% IV (15/15/15) + Shiny!
         if (huntMode === "shundo_local" || huntMode === "shundo_global") {
-          if (p.iv_percent !== 100 || p.raw_iv !== "15/15/15") return false;
+          if (!p.shiny || p.iv_percent !== 100 || p.raw_iv !== "15/15/15") return false;
         }
 
-        // Filtro por IV no modo normal local_shiny
-        if (huntMode === "local_shiny") {
+        // Se o modo for 100% IV Global: exige 100% IV
+        if (huntMode === "hundo_global") {
+          if (p.iv_percent !== 100) return false;
+        }
+
+        // Filtro por IV nos modos de busca de shiny (local_shiny e shiny_global)
+        if (huntMode === "local_shiny" || huntMode === "shiny_global") {
           if (ivFilter === "50" && p.iv_percent < 50) return false;
           if (ivFilter === "80" && p.iv_percent < 80) return false;
           if (ivFilter === "90" && p.iv_percent < 90) return false;

@@ -8,7 +8,7 @@ import {
 } from "@/lib/constants";
 import { PokemonSpawn, RadarHuntMode } from "@/types/pokemon";
 
-export const maxDuration = 45;
+export const maxDuration = 30;
 
 function getRandomSpoofedHeaders(authToken: string) {
   const ip = `10.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 254 + 1)}`;
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     const trainerCode = body.shinyAccount || DEFAULT_TRAINER_CODE;
     const hiddenSpecies: string[] = Array.isArray(body.hiddenSpecies) ? body.hiddenSpecies : [];
 
-    let mode: RadarHuntMode = body.huntMode || "local_shiny";
+    let mode: RadarHuntMode = body.huntMode || "hundo_global";
     if (body.isGlobal || body.shundoGlobal) {
       mode = "shundo_global";
     } else if (body.shundoOnly) {
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     let totalQueries = 0;
 
     // =========================================================================
-    // MODO 1: 100% IV GLOBAL (HUNDOS DO MUNDO TODO COM SHUNDOS NO TOPO)
+    // MODO 1: 100% IV GLOBAL (TODOS OS 100% IV NO MUNDO, SHUNDOS NO TOPO)
     // =========================================================================
     if (mode === "hundo_global") {
       const slicePromises = LEVEL_SLICES.map(async (slice, idx) => {
@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
           const res = await fetch(`${BASE_API_URL}/search`, {
             method: "POST",
             headers: getRandomSpoofedHeaders(token),
+            signal: AbortSignal.timeout(6000),
             body: JSON.stringify({
               shiny_only: false,
               shiny_account: trainerCode,
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Ordenação de ouro: Shundos no topo absoluto, seguidos pelos outros 100% IV
+      // Shundos (shiny: true) no topo absoluto! Seguidos por distância ou CP
       const finalList = Array.from(allSpawns.values())
         .sort((a, b) => {
           if (a.shiny && !b.shiny) return -1;
@@ -143,6 +144,7 @@ export async function POST(req: NextRequest) {
           const res = await fetch(`${BASE_API_URL}/search`, {
             method: "POST",
             headers: getRandomSpoofedHeaders(token),
+            signal: AbortSignal.timeout(6000),
             body: JSON.stringify({
               shiny_only: true,
               shiny_account: trainerCode,
@@ -187,49 +189,6 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Enriquecimento complementar via feeds nativos de 100IV
-      try {
-        const feedEndpoints = ["/feeds/high-cp-100iv", "/feeds/rare-100iv", "/feeds/level-35-100iv"];
-        const feedPromises = feedEndpoints.map(async (fpath, fidx) => {
-          totalQueries++;
-          const token = POGO_TOKENS[(fidx + 2) % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
-          try {
-            const res = await fetch(`${BASE_API_URL}${fpath}`, {
-              headers: getRandomSpoofedHeaders(token)
-            });
-            if (!res.ok) return [];
-            const data = await res.json();
-            return data.results || [];
-          } catch {
-            return [];
-          }
-        });
-
-        const feedResults = await Promise.all(feedPromises);
-        for (const batch of feedResults) {
-          for (const p of batch) {
-            if (!p.shiny) continue; // Só adiciona se for shiny confirmado
-            if (allSpawns.has(p.encounter_id)) continue;
-            if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
-            if (hiddenSpecies.includes(p.pokemon_name)) continue;
-
-            const dist =
-              p.apx_lat != null && p.apx_long != null && !isNaN(lat) && !isNaN(lng)
-                ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
-                : p.distance_km ?? null;
-
-            allSpawns.set(p.encounter_id, {
-              ...p,
-              shiny: true,
-              raw_iv: "15/15/15",
-              iv_percent: 100,
-              exact_coords: null,
-              distance_km: dist
-            });
-          }
-        }
-      } catch {}
-
       const finalList = Array.from(allSpawns.values())
         .sort((a, b) => {
           if (a.distance_km != null && b.distance_km != null) {
@@ -249,7 +208,7 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================================================================
-    // MODO 3: TODOS OS SHINIES GLOBAIS DA CONTA (50-60+ SHINIES NO PLANETA)
+    // MODO 3: TODOS OS SHINIES GLOBAIS DA CONTA (50-80+ SHINIES NO PLANETA)
     // =========================================================================
     if (mode === "shiny_global") {
       const slicePromises = LEVEL_SLICES.map(async (slice, idx) => {
@@ -260,6 +219,7 @@ export async function POST(req: NextRequest) {
           const res = await fetch(`${BASE_API_URL}/search`, {
             method: "POST",
             headers: getRandomSpoofedHeaders(token),
+            signal: AbortSignal.timeout(6000),
             body: JSON.stringify({
               shiny_only: true,
               shiny_account: trainerCode,
@@ -340,6 +300,7 @@ export async function POST(req: NextRequest) {
           const res = await fetch(`${BASE_API_URL}/search`, {
             method: "POST",
             headers: getRandomSpoofedHeaders(token),
+            signal: AbortSignal.timeout(6000),
             body: JSON.stringify({
               shiny_only: true,
               shiny_account: trainerCode,
@@ -411,6 +372,7 @@ export async function POST(req: NextRequest) {
         const res = await fetch(`${BASE_API_URL}/search`, {
           method: "POST",
           headers: getRandomSpoofedHeaders(token),
+          signal: AbortSignal.timeout(6000),
           body: JSON.stringify({
             shiny_only: true,
             shiny_account: trainerCode,
@@ -487,7 +449,7 @@ export async function GET(req: NextRequest) {
   const lng = parseFloat(searchParams.get("lng") || "-79.7399437");
   const radiusKm = parseFloat(searchParams.get("radiusKm") || "50");
   const targetCount = parseInt(searchParams.get("targetCount") || "100", 10);
-  const mode = (searchParams.get("mode") as RadarHuntMode) || "local_shiny";
+  const mode = (searchParams.get("mode") as RadarHuntMode) || "hundo_global";
 
   const fakeReq = new NextRequest(req.url, {
     method: "POST",
