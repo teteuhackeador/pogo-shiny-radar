@@ -129,11 +129,11 @@ export async function POST(req: NextRequest) {
       mode = "shundo_local";
     }
 
-    // Chave de cache para evitar rajadas repetidas no mesmo modo
+    // Chave de cache curto para evitar rajadas duplicadas sem prender dados velhos
     const cacheKey = `${mode}_${trainerCode}_${isNaN(lat) ? "global" : `${lat.toFixed(2)}_${lng.toFixed(2)}`}`;
     const now = Date.now();
     const cached = searchCache.get(cacheKey);
-    if (cached && now - cached.timestamp < 15000) {
+    if (cached && now - cached.timestamp < 5000 && !body.forceFresh) {
       return NextResponse.json({
         ...cached.data,
         cached: true

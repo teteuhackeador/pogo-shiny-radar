@@ -226,6 +226,7 @@ export default function Home() {
           radiusKm: activeRadius,
           targetCount,
           huntMode: activeMode,
+          shinyAccount: DEFAULT_TRAINER_CODE,
           hiddenSpecies: Array.from(hiddenSpecies)
         })
       });
