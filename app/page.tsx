@@ -239,12 +239,28 @@ export default function Home() {
       }
 
       const results = data.results || [];
-      setAllPokemons(results);
+      const now = Date.now();
 
-      let countMsg = `${results.length} shinys encontrados.`;
+      setAllPokemons((prev) => {
+        // Se o usuário trocou explicitamente de modo de caça, inicia lista nova do modo
+        if (overrideParams?.mode && overrideParams.mode !== huntMode) {
+          return results;
+        }
+        // No mesmo modo, funde os novos achados com os spawns ativos anteriores (Living Pool)
+        const spawnMap = new Map<string, PokemonSpawn>();
+        prev.forEach((p) => {
+          if (!p.despawn_at || new Date(p.despawn_at).getTime() > now) {
+            spawnMap.set(p.encounter_id, p);
+          }
+        });
+        results.forEach((p) => spawnMap.set(p.encounter_id, p));
+        return Array.from(spawnMap.values());
+      });
+
+      let countMsg = `${results.length} novos alvos encontrados.`;
       if (activeMode === "hundo_global") {
         const shundosFound = results.filter((s) => s.shiny).length;
-        countMsg = `${results.length} Hundos (100% IV) no mundo! (${shundosFound} Shundo(s) pro seu código!)`;
+        countMsg = `Varredura concluída: ${results.length} Hundos coletados (${shundosFound} Shundo pro seu código!)`;
       } else if (activeMode === "shiny_global") {
         countMsg = `${results.length} Shinies ativos confirmados pra sua conta no mundo!`;
       } else if (activeMode === "shundo_local") {

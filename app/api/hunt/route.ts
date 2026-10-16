@@ -30,14 +30,22 @@ function getRandomSpoofedHeaders(authToken: string) {
   };
 }
 
-// 6 fatias balanceadas distribuídas entre os 2 tokens para extrair 50-60+ Hundos sem acionar rate limit
-const BALANCED_SLICES = [
-  { min: 1, max: 10 },
-  { min: 11, max: 17 },
-  { min: 18, max: 23 },
-  { min: 24, max: 28 },
-  { min: 29, max: 32 },
-  { min: 33, max: 35 }
+// 8 fatias balanceadas multi-eixo (Níveis + Despawn + CP) distribuídas entre os 2 tokens do pool
+interface SliceConfig {
+  min: number;
+  max: number;
+  sort?: string;
+}
+
+const BALANCED_SLICES: SliceConfig[] = [
+  { min: 1, max: 8, sort: "DSP" },
+  { min: 9, max: 15, sort: "DSP" },
+  { min: 16, max: 22, sort: "DSP" },
+  { min: 23, max: 28, sort: "DSP" },
+  { min: 29, max: 32, sort: "DSP" },
+  { min: 33, max: 35, sort: "DSP" },
+  { min: 15, max: 35, sort: "CP" }, // Injeta os maiores CPs do mundo
+  { min: 1, max: 20, sort: "CP" }
 ];
 
 // Helper para fetch com timeout e rotação de token
@@ -118,7 +126,7 @@ export async function POST(req: NextRequest) {
     if (mode === "hundo_global") {
       const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
         if (idx > 0) {
-          await new Promise((r) => setTimeout(r, idx * 150));
+          await new Promise((r) => setTimeout(r, idx * 120));
         }
         const payload = {
           shiny_only: false,
@@ -128,7 +136,7 @@ export async function POST(req: NextRequest) {
           iv_mode: "percent",
           iv_percent_min: 100,
           iv_percent_max: 100,
-          sort: "DSP"
+          sort: slice.sort || "DSP"
         };
         return executeSearchWithRetry(payload, idx);
       });
@@ -192,6 +200,9 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     if (mode === "shundo_global") {
       const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+        if (idx > 0) {
+          await new Promise((r) => setTimeout(r, idx * 120));
+        }
         const payload = {
           shiny_only: true,
           shiny_account: trainerCode,
@@ -200,7 +211,7 @@ export async function POST(req: NextRequest) {
           iv_mode: "percent",
           iv_percent_min: 100,
           iv_percent_max: 100,
-          sort: "DSP"
+          sort: slice.sort || "DSP"
         };
         return executeSearchWithRetry(payload, idx);
       });
@@ -263,12 +274,15 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     if (mode === "shiny_global") {
       const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+        if (idx > 0) {
+          await new Promise((r) => setTimeout(r, idx * 120));
+        }
         const payload = {
           shiny_only: true,
           shiny_account: trainerCode,
           level_min: slice.min,
           level_max: slice.max,
-          sort: "DSP"
+          sort: slice.sort || "DSP"
         };
         return executeSearchWithRetry(payload, idx);
       });
@@ -340,6 +354,9 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     if (mode === "shundo_local") {
       const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+        if (idx > 0) {
+          await new Promise((r) => setTimeout(r, idx * 120));
+        }
         const payload = {
           shiny_only: true,
           shiny_account: trainerCode,
@@ -402,6 +419,9 @@ export async function POST(req: NextRequest) {
     // MODO 5: SHINYS NO RAIO LOCAL
     // =========================================================================
     const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+      if (idx > 0) {
+        await new Promise((r) => setTimeout(r, idx * 120));
+      }
       const payload = {
         shiny_only: true,
         shiny_account: trainerCode,
