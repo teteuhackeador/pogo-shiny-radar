@@ -17,7 +17,7 @@ const TRAINER_CODE = process.env.POGO_TRAINER_CODE || "489652495004";
 const NTFY_TOPIC = process.env.NTFY_TOPIC || "lo-shundo-yamask";
 const TARGET_POKEMON_ID = 562; // Yamask (Normal e Galarian)
 const TARGET_POKEMON_NAME = "Yamask";
-const POLL_INTERVAL_MS = 25000; // 25 segundos
+const POLL_INTERVAL_MS = 60000; // 60 segundos (seguro contra rate limit, 0 requisições na conta do LO a menos que haja hundo ativo)
 
 const alertedEncounters = new Set();
 let tokenIdx = 0;
@@ -127,9 +127,11 @@ async function checkYamaskSpawns() {
   const timestamp = new Date().toLocaleTimeString("pt-BR");
   process.stdout.write(`[${timestamp}] [SENTINELA] Varrendo o globo em busca de ${TARGET_POKEMON_NAME} 100% IV... `);
 
+  // PASSO 1: Varredura de busca de Yamask 100% IV usando conta neutra de telemetria
+  // Isso preserva 100% da cota da conta do LO e NUNCA gera rate limit de 40 minutos
   const payload = {
     pokemon_ids: [TARGET_POKEMON_ID],
-    shiny_account: TRAINER_CODE,
+    shiny_account: "1000", // Conta neutra/dummy para checagem de spawn e IV
     iv_mode: "percent",
     iv_percent_min: 100,
     iv_percent_max: 100,
@@ -166,7 +168,27 @@ async function checkYamaskSpawns() {
     console.log(`Encontrados ${activeHundos.length} Hundo(s) 100% IV!`);
 
     for (const hundo of activeHundos) {
-      const isShinyForLo = hundo.shiny === true;
+      // Checa pontualmente para a conta do LO (1 única requisição pontual, preservando a cota)
+      let isShinyForLo = false;
+      try {
+        const checkRes = await fetch(`${BASE_API_URL}/search`, {
+          method: "POST",
+          headers: getHeaders(),
+          body: JSON.stringify({
+            pokemon_ids: [TARGET_POKEMON_ID],
+            shiny_account: TRAINER_CODE,
+            iv_mode: "percent",
+            iv_percent_min: 100,
+            iv_percent_max: 100
+          })
+        });
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          const match = (checkData.results || []).find(p => p.encounter_id === hundo.encounter_id);
+          if (match && match.shiny) isShinyForLo = true;
+        }
+      } catch {}
+
       const formTag = hundo.form ? `[${hundo.form}]` : "[Normal]";
       console.log(`  -> ${hundo.pokemon_name} ${formTag} Lvl ${hundo.level} CP ${hundo.cp} em ${hundo.location} | Shiny LO: ${isShinyForLo ? "SIM (SHUNDO!)" : "Nao"}`);
 

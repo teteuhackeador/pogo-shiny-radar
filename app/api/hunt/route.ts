@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
         }
         const payload = {
           shiny_only: false,
-          shiny_account: trainerCode,
+          shiny_account: "1000", // Conta neutra/dummy: blindagem total contra rate limit de 40 min na conta do LO
           level_min: slice.min,
           level_max: slice.max,
           iv_mode: "percent",
@@ -458,53 +458,66 @@ export async function POST(req: NextRequest) {
     const deltaLat = radiusKm / 111.0;
     const deltaLng = radiusKm / (111.0 * Math.max(0.1, Math.cos((lat * Math.PI) / 180.0)));
 
-    // 1. Consulta Principal no /map/lookup (Traz até 100 Shinies de uma vez só!)
-    try {
-      const mapPayload = {
-        mode: "pokemon",
-        n_lat: lat + deltaLat,
-        s_lat: lat - deltaLat,
-        w_lng: lng - deltaLng,
-        e_lng: lng + deltaLng,
-        filters: {
-          shiny_only: true,
-          shiny_account: trainerCode,
-          sort: "IV"
-        }
-      };
+    // 1. Consulta em 5 Quadrantes Geográficos (CTR, NE, NW, SE, SW) para varrer 100% da área
+    const tiles = [
+      { name: "CTR", n: lat + deltaLat * 0.6, s: lat - deltaLat * 0.6, w: lng - deltaLng * 0.6, e: lng + deltaLng * 0.6 },
+      { name: "NE", n: lat + deltaLat, s: lat, w: lng, e: lng + deltaLng },
+      { name: "NW", n: lat + deltaLat, s: lat, w: lng - deltaLng, e: lng },
+      { name: "SE", n: lat, s: lat - deltaLat, w: lng, e: lng + deltaLng },
+      { name: "SW", n: lat, s: lat - deltaLat, w: lng - deltaLng, e: lng }
+    ];
 
-      const token = POGO_TOKENS[0];
-      const res = await fetch(`${BASE_API_URL}/map/lookup`, {
-        method: "POST",
-        headers: getRandomSpoofedHeaders(token),
-        signal: AbortSignal.timeout(9000),
-        body: JSON.stringify(mapPayload)
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        for (const p of data.results || []) {
-          if (!p.shiny) continue;
-          if (p.despawn_at_ms && p.despawn_at_ms <= now) continue;
-          if (hiddenSpecies.includes(p.pokemon_name)) continue;
-
-          const pLat = p.apx_lat ?? null;
-          const pLng = p.apx_long ?? null;
-          const dist = pLat != null && pLng != null ? calculateDistanceKm(lat, lng, pLat, pLng) : null;
-          if (dist != null && dist > radiusKm * 1.15) continue;
-
-          allSpawns.set(p.encounter_id, {
-            ...p,
-            despawn_at: p.despawn_at_ms ? new Date(p.despawn_at_ms).toISOString() : p.despawn_at,
-            shiny: true,
-            exact_coords: null,
-            distance_km: dist
-          });
-        }
+    const tilePromises = tiles.map(async (t, idx) => {
+      if (idx > 0) {
+        await new Promise((r) => setTimeout(r, idx * 90));
       }
-    } catch (err: any) {
-      console.warn("Aviso no /map/lookup local_shiny:", err);
-    }
+      const token = POGO_TOKENS[idx % POGO_TOKENS.length];
+      try {
+        const res = await fetch(`${BASE_API_URL}/map/lookup`, {
+          method: "POST",
+          headers: getRandomSpoofedHeaders(token),
+          signal: AbortSignal.timeout(9000),
+          body: JSON.stringify({
+            mode: "pokemon",
+            n_lat: t.n,
+            s_lat: t.s,
+            w_lng: t.w,
+            e_lng: t.e,
+            filters: {
+              shiny_only: true,
+              shiny_account: trainerCode,
+              sort: "IV"
+            }
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          for (const p of data.results || []) {
+            if (!p.shiny) continue;
+            if (p.despawn_at_ms && p.despawn_at_ms <= now) continue;
+            if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+            const pLat = p.apx_lat ?? null;
+            const pLng = p.apx_long ?? null;
+            const dist = pLat != null && pLng != null ? calculateDistanceKm(lat, lng, pLat, pLng) : null;
+            if (dist != null && dist > radiusKm * 1.25) continue;
+
+            allSpawns.set(p.encounter_id, {
+              ...p,
+              despawn_at: p.despawn_at_ms ? new Date(p.despawn_at_ms).toISOString() : p.despawn_at,
+              shiny: true,
+              exact_coords: null,
+              distance_km: dist
+            });
+          }
+        }
+      } catch (err: any) {
+        console.warn(`Aviso no tile ${t.name}:`, err);
+      }
+    });
+
+    await Promise.all(tilePromises);
 
     // 2. Consulta Complementar no /search por Distância para pegar spawns de borda
     try {

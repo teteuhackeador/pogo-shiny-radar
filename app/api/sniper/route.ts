@@ -120,13 +120,14 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     // AÇÃO: ESCANEAR BUSCANDO YAMASK 100% IV
     // =========================================================================
+    // PASSO 1: Busca global de Yamask 100% IV com conta neutra (preserva 100% da cota do LO)
     const payload = {
       pokemon_ids: [targetSpeciesId],
-      shiny_account: trainerCode,
+      shiny_account: "1000", // Conta neutra/dummy
       iv_mode: "percent",
       iv_percent_min: 100,
       iv_percent_max: 100,
-      shiny_only: false // Puxamos os 100% IV e checamos o status shiny
+      shiny_only: false
     };
 
     let apiResults: any[] = [];
@@ -142,6 +143,29 @@ export async function POST(req: NextRequest) {
           const data = await res.json();
           apiResults = data.results || [];
           break;
+        }
+      } catch {}
+    }
+
+    // PASSO 2: Se encontramos algum Yamask 100% IV ativo no mundo, checamos especificamente para a conta do LO
+    if (apiResults.length > 0 && trainerCode !== "1000") {
+      try {
+        const checkRes = await fetch(`${BASE_API_URL}/search`, {
+          method: "POST",
+          headers: getRandomSpoofedHeaders(POGO_TOKENS[0]),
+          signal: AbortSignal.timeout(8000),
+          body: JSON.stringify({
+            pokemon_ids: [targetSpeciesId],
+            shiny_account: trainerCode,
+            iv_mode: "percent",
+            iv_percent_min: 100,
+            iv_percent_max: 100,
+            shiny_only: false
+          })
+        });
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          apiResults = checkData.results || apiResults;
         }
       } catch {}
     }
