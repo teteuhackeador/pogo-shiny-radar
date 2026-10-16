@@ -110,7 +110,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
         if (!data.is_approx) {
           onRevealSuccess(pokemon.encounter_id, data.coords);
         } else {
-          setRevealError(`Cota da API ativa (${data.retry_after || 180}s) • Usando aprox.`);
+          setRevealError(`Cota ativa (${data.retry_after || 180}s) • Usando aprox.`);
           onRateLimited(data.retry_after || 180);
         }
         return { coords: data.coords, isApprox: !!data.is_approx };
@@ -118,17 +118,15 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
 
       if (res.status === 429 || data.error === "rate_limited") {
         const retry = data.retry_after || 180;
-        setRevealError(`Cota da API ativa (${retry}s) • Usando aprox.`);
+        setRevealError(`Cota ativa (${retry}s) • Usando aprox.`);
         onRateLimited(retry);
 
-        // Fallback imediato para coordenadas aproximadas
         if (pokemon.apx_lat != null && pokemon.apx_long != null) {
           return { coords: `${pokemon.apx_lat},${pokemon.apx_long}`, isApprox: true };
         }
         return null;
       }
 
-      // Fallback em caso de falha da API
       if (pokemon.apx_lat != null && pokemon.apx_long != null) {
         return { coords: `${pokemon.apx_lat},${pokemon.apx_long}`, isApprox: true };
       }
@@ -146,7 +144,6 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
     }
   };
 
-  // Botão Copiar Coords: obtém a coordenada exata verdadeira ou aproximada e copia pro clipboard
   const handleCopyCoords = async () => {
     let target = exactCoords ? { coords: exactCoords, isApprox: false } : null;
 
@@ -161,18 +158,17 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
       setCopied(true);
       if (onToast) {
         if (target.isApprox) {
-          onToast(`Copiado aprox. (~100m da cota): ${target.coords}`);
+          onToast(`Copiado aprox.: ${target.coords}`);
         } else {
           onToast(`Copiado exato: ${target.coords}`);
         }
       }
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      if (onToast) onToast("Erro ao copiar para a área de transferência.");
+      if (onToast) onToast("Erro ao copiar.");
     }
   };
 
-  // Botão Maps: abre diretamente no Google Maps com a coordenada
   const handleOpenMaps = async () => {
     let target = exactCoords ? { coords: exactCoords, isApprox: false } : null;
 
@@ -195,86 +191,78 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
     <div
       className={`rounded-2xl border transition-all text-zinc-100 p-3 sm:p-3.5 ${
         isCaptured
-          ? "bg-[#0e0e11] border-[#27272a]/60 opacity-50"
+          ? "bg-[#0a0a0c] border-[#1c1c20] opacity-40"
           : isShundo
-          ? "bg-[#14130e] border-amber-600/40"
-          : "bg-[#121214] border-[#27272a]"
+          ? "bg-[#11100d] border-amber-500/30"
+          : "bg-[#121214] border-[#222226] hover:border-zinc-700/60"
       }`}
     >
-      {/* Linha Superior: Nome, Stats Básicos e Botão Peguei */}
-      <div className="flex items-start justify-between gap-2 mb-2">
+      {/* Linha Superior: Nome, Badges e Botão Peguei */}
+      <div className="flex items-start justify-between gap-2 mb-1.5">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             <h3 className="text-sm font-semibold text-zinc-100 truncate">
               {pokemon.pokemon_name}
             </h3>
+
             {isShundo ? (
-              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded border flex items-center gap-1 bg-amber-500/15 text-amber-300 border-amber-500/40 shadow-sm tracking-wider">
+              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded border flex items-center gap-1 bg-amber-950/40 text-amber-300 border-amber-600/40">
                 <Crown className="w-3 h-3 text-amber-400" />
                 <span>SHUNDO 100%</span>
               </span>
             ) : pokemon.shiny ? (
-              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded border flex items-center gap-1 bg-zinc-800/90 text-amber-300 border-zinc-700 tracking-wider">
+              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-zinc-800 text-amber-300 border-zinc-700">
                 <Sparkles className="w-2.5 h-2.5 text-amber-400" />
-                <span>SHINY {pokemon.iv_percent}%</span>
+                <span>SHINY</span>
               </span>
             ) : pokemon.iv_percent === 100 ? (
-              <span className="text-[10px] font-bold font-mono px-2 py-0.5 rounded border flex items-center gap-1 bg-red-500/15 text-red-300 border-red-500/40 tracking-wider">
-                <span>100% IV</span>
+              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border bg-zinc-800 text-zinc-100 border-zinc-700">
+                100% IV
               </span>
             ) : (
-              <span className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded border flex items-center gap-1 bg-zinc-800 text-zinc-300 border-zinc-700">
-                <span>{pokemon.iv_percent}% IV</span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border bg-[#18181b] text-zinc-400 border-[#27272a]">
+                {pokemon.iv_percent}% IV
               </span>
             )}
+
             <span className="text-[11px] font-mono text-zinc-400">
               Nv. {pokemon.level}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 mt-0.5 text-xs font-mono">
+          <div className="flex items-center gap-2 mt-0.5 text-xs font-mono text-zinc-300">
             <span className="font-semibold text-zinc-200">
               CP {pokemon.cp}
             </span>
-            <span className="text-zinc-500">•</span>
-            <span
-              className={
-                isShundo
-                  ? "text-amber-400 font-bold"
-                  : pokemon.iv_percent >= 90
-                  ? "text-emerald-400 font-medium"
-                  : "text-zinc-300"
-              }
-            >
+            <span className="text-zinc-600">•</span>
+            <span className={isShundo ? "text-amber-400 font-bold" : "text-zinc-300"}>
               IV {pokemon.iv_percent}%
             </span>
-            <span className="text-zinc-500 text-[10px]">
+            <span className="text-zinc-500 text-[11px]">
               ({pokemon.raw_iv})
             </span>
           </div>
         </div>
 
+        {/* Ações Rápidas no Cabeçalho do Card */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          {/* Botão Ocultar Espécie */}
           {onHideSpecies && (
             <button
               type="button"
               onClick={() => onHideSpecies(pokemon.pokemon_name)}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-[#18181b] hover:bg-rose-950/40 text-zinc-400 hover:text-rose-300 border border-[#27272a] hover:border-rose-900/50 transition-colors"
-              title={`Ocultar todos os ${pokemon.pokemon_name} do radar`}
+              className="flex items-center justify-center w-7 h-7 rounded-lg text-zinc-400 hover:text-zinc-200 bg-[#18181b] border border-[#27272a] hover:border-zinc-700 transition-colors"
+              title={`Ocultar todos os ${pokemon.pokemon_name}`}
             >
               <EyeOff className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Ocultar</span>
             </button>
           )}
 
-          {/* Botão/Checkbox "Peguei" */}
           <button
             type="button"
             onClick={() => onToggleCaptured(pokemon.encounter_id)}
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
               isCaptured
-                ? "bg-emerald-950/40 text-emerald-300 border border-emerald-800/60"
+                ? "bg-zinc-800 text-zinc-200 border border-zinc-700"
                 : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
             }`}
             title={isCaptured ? "Marcar como não capturado" : "Marcar como capturado"}
@@ -289,34 +277,32 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
         </div>
       </div>
 
-      {/* Linha Central: Sprite + Detalhes de Despawn e Localização */}
-      <div className="flex items-center gap-3 py-1">
-        {/* Sprite */}
-        <div className="relative w-14 h-14 flex-shrink-0 flex items-center justify-center rounded-xl bg-[#18181b] border border-[#27272a]">
+      {/* Linha Central: Sprite + Metadados */}
+      <div className="flex items-center gap-3 py-1.5">
+        <div className="relative w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-xl bg-[#0e0e11] border border-[#222226]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imgSrc}
             alt={pokemon.pokemon_name}
             onError={() => setImgSrc(getPokemonFallbackSprite(pokemon.pokemon_id))}
-            className="w-12 h-12 object-contain"
+            className="w-10 h-10 object-contain"
             loading="lazy"
           />
         </div>
 
-        {/* Metadados: Tempo restante, Distância e Local */}
-        <div className="flex-1 min-w-0 text-xs">
-          <div className="flex items-center gap-1.5 mb-1 font-mono">
-            <Clock className="w-3.5 h-3.5 text-zinc-400 flex-shrink-0" />
+        <div className="flex-1 min-w-0 text-xs space-y-0.5">
+          <div className="flex items-center gap-1.5 font-mono text-[11px]">
+            <Clock className="w-3 h-3 text-zinc-400 flex-shrink-0" />
             <span
               className={
                 isExpired
-                  ? "text-rose-400"
+                  ? "text-zinc-500 line-through"
                   : isCriticalTime
                   ? "text-amber-400 font-semibold"
                   : "text-zinc-300"
               }
             >
-              {timeLeft ? `${timeLeft} restando` : "Calculando..."}
+              {timeLeft ? `${timeLeft} restantes` : "Calculando..."}
             </span>
           </div>
 
@@ -336,41 +322,41 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
               }
               return dist != null ? (
                 <>
-                  <span className="text-emerald-400 font-mono font-medium">{dist} km</span>
+                  <span className="text-zinc-200 font-mono font-medium">{dist} km</span>
                   <span className="text-zinc-600">•</span>
                 </>
               ) : null;
             })()}
-            <span className="truncate">{pokemon.location || (pokemon.apx_lat ? `Região de ${pokemon.apx_lat.toFixed(3)}, ${pokemon.apx_long?.toFixed(3)}` : "Localização informada")}</span>
+            <span className="truncate">
+              {pokemon.location || (pokemon.apx_lat ? `Região de ${pokemon.apx_lat.toFixed(3)}, ${pokemon.apx_long?.toFixed(3)}` : "Localização informada")}
+            </span>
           </div>
 
           {(pokemon.fast_move || pokemon.charge_move) && (
-            <div className="text-[10px] text-zinc-400 font-mono mt-0.5 truncate flex items-center gap-1.5">
-              <Swords className="w-2.5 h-2.5 text-zinc-500 flex-shrink-0" />
+            <div className="text-[10px] text-zinc-500 font-mono truncate flex items-center gap-1">
+              <Swords className="w-2.5 h-2.5 text-zinc-600 flex-shrink-0" />
               <span>{pokemon.fast_move || "—"} / {pokemon.charge_move || "—"}</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Erro de Revelação, se houver */}
       {revealError && (
-        <p className="mt-1 text-center text-[11px] text-amber-400 font-medium">
+        <p className="mt-1 text-center text-[11px] text-zinc-400 font-medium">
           {revealError}
         </p>
       )}
 
-      {/* Linha Inferior: Botões de Ação para o Polegar */}
-      <div className="grid grid-cols-2 gap-2 mt-2.5 pt-2 border-t border-[#27272a]">
-        {/* Botão Copiar Coords */}
+      {/* Linha Inferior: Botões Ergonômicos com 40px de altura para o Dedão */}
+      <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-[#222226]">
         <button
           type="button"
           onClick={handleCopyCoords}
           disabled={revealing || isExpired}
           className={`h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
             copied
-              ? "bg-emerald-600 text-white"
-              : "bg-[#18181b] hover:bg-[#222226] text-zinc-100 border border-[#27272a]"
+              ? "bg-zinc-200 text-zinc-950 font-bold"
+              : "bg-[#18181b] hover:bg-[#202024] text-zinc-100 border border-[#27272a]"
           }`}
         >
           {revealing ? (
@@ -380,7 +366,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
             </>
           ) : copied ? (
             <>
-              <Check className="w-3.5 h-3.5 text-white" />
+              <Check className="w-3.5 h-3.5 text-zinc-950" />
               <span>Copiado!</span>
             </>
           ) : (
@@ -391,12 +377,11 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
           )}
         </button>
 
-        {/* Botão Google Maps */}
         <button
           type="button"
           onClick={handleOpenMaps}
           disabled={revealing || isExpired}
-          className="h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-[#18181b] hover:bg-[#222226] text-zinc-100 border border-[#27272a] transition-all active:scale-95"
+          className="h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-[#18181b] hover:bg-[#202024] text-zinc-100 border border-[#27272a] transition-all active:scale-95"
         >
           <ExternalLink className="w-3.5 h-3.5 text-zinc-300" />
           <span>Maps</span>

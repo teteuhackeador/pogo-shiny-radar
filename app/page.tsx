@@ -23,6 +23,7 @@ export default function Home() {
   const [radiusKm, setRadiusKm] = useState<number>(50);
   const [targetCount, setTargetCount] = useState<number>(100);
   const [huntMode, setHuntMode] = useState<RadarHuntMode>("hundo_global");
+  const [scannedHuntMode, setScannedHuntMode] = useState<RadarHuntMode>("hundo_global");
 
   // Estados de Busca e Dados
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -239,12 +240,14 @@ export default function Home() {
         return;
       }
 
-      const results = data.results || [];
+      const results: PokemonSpawn[] = data.results || [];
       const now = Date.now();
 
+      setScannedHuntMode(activeMode);
+
       setAllPokemons((prev) => {
-        // Se o usuário trocou explicitamente de modo de caça, inicia lista nova do modo
-        if (overrideParams?.mode && overrideParams.mode !== huntMode) {
+        // Se o modo ativo for diferente do modo escaneado anteriormente, substitui por lista limpa
+        if (activeMode !== scannedHuntMode) {
           return results;
         }
         // No mesmo modo, funde os novos achados com os spawns ativos anteriores (Living Pool)
@@ -280,12 +283,13 @@ export default function Home() {
     }
   };
 
+  // Disparo manual do scan pelo botão ou inicialização
   const handleHuntModeChange = (newMode: RadarHuntMode) => {
     setHuntMode(newMode);
-    handleExecuteScan({ mode: newMode });
+    // NÃO dispara busca automática ao trocar de categoria, respeitando a escolha do usuário
   };
 
-  // Disparo automático do primeiro scan (100% IV Global) ao abrir o radar
+  // Disparo automático inicial apenas uma vez ao abrir o radar
   useEffect(() => {
     handleExecuteScan({ mode: "hundo_global" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -309,7 +313,7 @@ export default function Home() {
         const isCap = capturedIds.has(p.encounter_id);
 
         // Se o modo NÃO for 100% IV Global (hundo_global), exige que seja shiny!
-        if (huntMode !== "hundo_global" && !p.shiny) return false;
+        if (scannedHuntMode !== "hundo_global" && !p.shiny) return false;
 
         // Ocultar automaticamente os que já sumiram / expiraram
         if (p.despawn_at && currentTime > 0) {
@@ -332,17 +336,17 @@ export default function Home() {
         }
 
         // Se o modo for Shundo (local ou global): estritamente 100% IV (15/15/15) + Shiny!
-        if (huntMode === "shundo_local" || huntMode === "shundo_global") {
+        if (scannedHuntMode === "shundo_local" || scannedHuntMode === "shundo_global") {
           if (!p.shiny || p.iv_percent !== 100 || p.raw_iv !== "15/15/15") return false;
         }
 
         // Se o modo for 100% IV Global: exige 100% IV
-        if (huntMode === "hundo_global") {
+        if (scannedHuntMode === "hundo_global") {
           if (p.iv_percent !== 100) return false;
         }
 
         // Filtro por IV nos modos de busca de shiny (local_shiny e shiny_global)
-        if (huntMode === "local_shiny" || huntMode === "shiny_global") {
+        if (scannedHuntMode === "local_shiny" || scannedHuntMode === "shiny_global") {
           if (ivFilter === "50" && p.iv_percent < 50) return false;
           if (ivFilter === "80" && p.iv_percent < 80) return false;
           if (ivFilter === "90" && p.iv_percent < 90) return false;
@@ -394,7 +398,7 @@ export default function Home() {
         }
         return 0;
       });
-  }, [allPokemons, capturedIds, hiddenSpecies, hideCaptured, searchQuery, ivFilter, sortOption, currentTime, revealedCoordsMap, lat, lng, huntMode]);
+  }, [allPokemons, capturedIds, hiddenSpecies, hideCaptured, searchQuery, ivFilter, sortOption, currentTime, revealedCoordsMap, lat, lng, scannedHuntMode]);
 
   const capturedCount = useMemo(() => {
     return allPokemons.filter((p) => capturedIds.has(p.encounter_id)).length;
@@ -411,7 +415,7 @@ export default function Home() {
         onOpenSniper={() => setIsSniperModalOpen(true)}
       />
 
-      {/* Painel de Coordenadas e Scan com os 3 Modos */}
+      {/* Painel Tático de Controle e Modos */}
       <ControlPanel
         lat={lat}
         lng={lng}
@@ -419,6 +423,7 @@ export default function Home() {
         targetCount={targetCount}
         isLoading={isLoading}
         huntMode={huntMode}
+        scannedHuntMode={scannedHuntMode}
         onCoordinatesChange={(newLat, newLng) => {
           setLat(newLat);
           setLng(newLng);
