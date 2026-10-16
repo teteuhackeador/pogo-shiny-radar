@@ -30,11 +30,14 @@ function getRandomSpoofedHeaders(authToken: string) {
   };
 }
 
-// 3 fatias equilibradas de nível para extrair até 30-40 spawns sem estourar o rate limit de rajada da API
+// 6 fatias balanceadas distribuídas entre os 2 tokens para extrair 50-60+ Hundos sem acionar rate limit
 const BALANCED_SLICES = [
-  { min: 1, max: 15 },
-  { min: 16, max: 25 },
-  { min: 26, max: 35 }
+  { min: 1, max: 10 },
+  { min: 11, max: 17 },
+  { min: 18, max: 23 },
+  { min: 24, max: 28 },
+  { min: 29, max: 32 },
+  { min: 33, max: 35 }
 ];
 
 // Helper para fetch com timeout e rotação de token
@@ -114,6 +117,9 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     if (mode === "hundo_global") {
       const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+        if (idx > 0) {
+          await new Promise((r) => setTimeout(r, idx * 150));
+        }
         const payload = {
           shiny_only: false,
           shiny_account: trainerCode,
