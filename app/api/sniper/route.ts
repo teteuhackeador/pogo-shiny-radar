@@ -28,23 +28,40 @@ export async function sendNtfyAlarm(params: {
   const { topic, title, message, coords, priority = 5, sound = "sirens" } = params;
   const cleanTopic = topic.trim() || "lo-shundo-yamask";
 
-  const headers: Record<string, string> = {
-    "Title": title,
-    "Priority": String(priority),
-    "Tags": "skull,warning,sparkles,dart",
-    "Sound": sound
+  const actions: any[] = [];
+  if (coords) {
+    actions.push({
+      action: "view",
+      label: "Abrir Google Maps",
+      url: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(coords)}`
+    });
+    actions.push({
+      action: "copy",
+      label: "Copiar Coords",
+      value: coords
+    });
+  }
+
+  const payload: any = {
+    topic: cleanTopic,
+    title,
+    message,
+    priority,
+    tags: ["skull", "warning", "sparkles"],
+    sound
   };
 
-  if (coords) {
-    // Ações para o celular: abrir no mapa ou copiar coordenadas
-    headers["Actions"] = `view, Abrir Google Maps, https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(coords)}; copy, Copiar Coords, ${coords}`;
+  if (actions.length > 0) {
+    payload.actions = actions;
   }
 
   try {
-    const res = await fetch(`https://ntfy.sh/${encodeURIComponent(cleanTopic)}`, {
+    const res = await fetch("https://ntfy.sh", {
       method: "POST",
-      headers,
-      body: message
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
     });
     return { ok: res.ok, status: res.status };
   } catch (err: any) {

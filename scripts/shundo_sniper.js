@@ -58,16 +58,38 @@ async function sendMobileAlarm(match, exactCoords) {
   console.log("=======================================================\n");
 
   try {
-    const res = await fetch(`https://ntfy.sh/${encodeURIComponent(NTFY_TOPIC)}`, {
+    const actions = [
+      {
+        action: "view",
+        label: "Abrir no Mapa",
+        url: mapsUrl
+      }
+    ];
+
+    if (exactCoords) {
+      actions.push({
+        action: "copy",
+        label: "Copiar Coordenadas",
+        value: exactCoords
+      });
+    }
+
+    const payload = {
+      topic: NTFY_TOPIC,
+      title: title,
+      message: message,
+      priority: 5,
+      tags: ["skull", "warning", "sparkles"],
+      sound: "sirens",
+      actions: actions
+    };
+
+    const res = await fetch("https://ntfy.sh", {
       method: "POST",
       headers: {
-        "Title": title,
-        "Priority": "5", // Prioridade maxima (fura 'Nao Perturbe')
-        "Tags": "skull,warning,sparkles,dart",
-        "Sound": "sirens", // Som alto de sirene no Android/iOS
-        "Actions": `view, Abrir no Mapa, ${mapsUrl}; copy, Copiar Coordenadas, ${coordsStr}`
+        "Content-Type": "application/json"
       },
-      body: message
+      body: JSON.stringify(payload)
     });
 
     if (res.ok) {
