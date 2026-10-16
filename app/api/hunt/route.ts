@@ -350,18 +350,68 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================================================================
-    // MODO 4: SHUNDO LOCAL (NO RAIO)
+    // MODO 4: SHUNDO LOCAL (NO RAIO COM MAP LOOKUP + SEARCH HÍBRIDO)
     // =========================================================================
     if (mode === "shundo_local") {
-      const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
-        if (idx > 0) {
-          await new Promise((r) => setTimeout(r, idx * 120));
-        }
-        const payload = {
+      const deltaLat = radiusKm / 111.0;
+      const deltaLng = radiusKm / (111.0 * Math.max(0.1, Math.cos((lat * Math.PI) / 180.0)));
+
+      // 1. Map Lookup na Bounding Box do Raio
+      const mapPayload = {
+        mode: "pokemon",
+        n_lat: lat + deltaLat,
+        s_lat: lat - deltaLat,
+        w_lng: lng - deltaLng,
+        e_lng: lng + deltaLng,
+        filters: {
           shiny_only: true,
           shiny_account: trainerCode,
-          level_min: slice.min,
-          level_max: slice.max,
+          iv_mode: "percent",
+          iv_percent_min: 100,
+          iv_percent_max: 100,
+          sort: "IV"
+        }
+      };
+
+      try {
+        const token = POGO_TOKENS[0];
+        const res = await fetch(`${BASE_API_URL}/map/lookup`, {
+          method: "POST",
+          headers: getRandomSpoofedHeaders(token),
+          signal: AbortSignal.timeout(9000),
+          body: JSON.stringify(mapPayload)
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          for (const p of data.results || []) {
+            if (!p.shiny || p.iv_percent !== 100) continue;
+            if (p.despawn_at_ms && p.despawn_at_ms <= now) continue;
+            if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+            const pLat = p.apx_lat ?? null;
+            const pLng = p.apx_long ?? null;
+            const dist = pLat != null && pLng != null ? calculateDistanceKm(lat, lng, pLat, pLng) : null;
+            if (dist != null && dist > radiusKm * 1.15) continue;
+
+            allSpawns.set(p.encounter_id, {
+              ...p,
+              despawn_at: p.despawn_at_ms ? new Date(p.despawn_at_ms).toISOString() : p.despawn_at,
+              shiny: true,
+              raw_iv: "15/15/15",
+              iv_percent: 100,
+              exact_coords: null,
+              distance_km: dist
+            });
+          }
+        }
+      } catch {}
+
+      // 2. Search Complementar por Distância
+      try {
+        const searchPayload = {
+          shiny_only: true,
+          shiny_account: trainerCode,
           iv_mode: "percent",
           iv_percent_min: 100,
           iv_percent_max: 100,
@@ -370,25 +420,13 @@ export async function POST(req: NextRequest) {
           radius_km: radiusKm,
           sort: "DIST"
         };
-        return executeSearchWithRetry(payload, idx);
-      });
-
-      const sliceResults = await Promise.all(slicePromises);
-
-      for (const res of sliceResults) {
-        if (res.rateLimited) {
-          rateLimitHit = true;
-          if (res.retryAfter) maxRetryAfter = Math.max(maxRetryAfter, res.retryAfter);
-        }
-        for (const p of res.results) {
+        const sRes = await executeSearchWithRetry(searchPayload, 1);
+        for (const p of sRes.results || []) {
           if (!p.shiny || p.iv_percent !== 100) continue;
           if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
           if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
-          const dist =
-            p.apx_lat != null && p.apx_long != null
-              ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
-              : p.distance_km ?? null;
+          const dist = p.apx_lat != null && p.apx_long != null ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long) : p.distance_km ?? null;
 
           allSpawns.set(p.encounter_id, {
             ...p,
@@ -399,7 +437,7 @@ export async function POST(req: NextRequest) {
             distance_km: dist
           });
         }
-      }
+      } catch {}
 
       const finalList = Array.from(allSpawns.values())
         .sort((a, b) => (a.distance_km ?? 9999) - (b.distance_km ?? 9999))
@@ -410,47 +448,81 @@ export async function POST(req: NextRequest) {
         count: finalList.length,
         mode: "shundo_local",
         rate_limited: rateLimitHit,
-        retry_after: maxRetryAfter > 0 ? maxRetryAfter : undefined,
         results: finalList
       });
     }
 
     // =========================================================================
-    // MODO 5: SHINYS NO RAIO LOCAL
+    // MODO 5: SHINYS NO RAIO LOCAL (MAP LOOKUP DE ALTA DENSIDADE: ATÉ 100+ SHINIES)
     // =========================================================================
-    const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
-      if (idx > 0) {
-        await new Promise((r) => setTimeout(r, idx * 120));
+    const deltaLat = radiusKm / 111.0;
+    const deltaLng = radiusKm / (111.0 * Math.max(0.1, Math.cos((lat * Math.PI) / 180.0)));
+
+    // 1. Consulta Principal no /map/lookup (Traz até 100 Shinies de uma vez só!)
+    try {
+      const mapPayload = {
+        mode: "pokemon",
+        n_lat: lat + deltaLat,
+        s_lat: lat - deltaLat,
+        w_lng: lng - deltaLng,
+        e_lng: lng + deltaLng,
+        filters: {
+          shiny_only: true,
+          shiny_account: trainerCode,
+          sort: "IV"
+        }
+      };
+
+      const token = POGO_TOKENS[0];
+      const res = await fetch(`${BASE_API_URL}/map/lookup`, {
+        method: "POST",
+        headers: getRandomSpoofedHeaders(token),
+        signal: AbortSignal.timeout(9000),
+        body: JSON.stringify(mapPayload)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        for (const p of data.results || []) {
+          if (!p.shiny) continue;
+          if (p.despawn_at_ms && p.despawn_at_ms <= now) continue;
+          if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+          const pLat = p.apx_lat ?? null;
+          const pLng = p.apx_long ?? null;
+          const dist = pLat != null && pLng != null ? calculateDistanceKm(lat, lng, pLat, pLng) : null;
+          if (dist != null && dist > radiusKm * 1.15) continue;
+
+          allSpawns.set(p.encounter_id, {
+            ...p,
+            despawn_at: p.despawn_at_ms ? new Date(p.despawn_at_ms).toISOString() : p.despawn_at,
+            shiny: true,
+            exact_coords: null,
+            distance_km: dist
+          });
+        }
       }
-      const payload = {
+    } catch (err: any) {
+      console.warn("Aviso no /map/lookup local_shiny:", err);
+    }
+
+    // 2. Consulta Complementar no /search por Distância para pegar spawns de borda
+    try {
+      const searchPayload = {
         shiny_only: true,
         shiny_account: trainerCode,
-        level_min: slice.min,
-        level_max: slice.max,
         center_lat: lat,
         center_lng: lng,
         radius_km: radiusKm,
         sort: "DIST"
       };
-      return executeSearchWithRetry(payload, idx);
-    });
-
-    const sliceResults = await Promise.all(slicePromises);
-
-    for (const res of sliceResults) {
-      if (res.rateLimited) {
-        rateLimitHit = true;
-        if (res.retryAfter) maxRetryAfter = Math.max(maxRetryAfter, res.retryAfter);
-      }
-      for (const p of res.results) {
+      const sRes = await executeSearchWithRetry(searchPayload, 1);
+      for (const p of sRes.results || []) {
         if (!p.shiny) continue;
         if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
         if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
-        const dist =
-          p.apx_lat != null && p.apx_long != null
-            ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long)
-            : p.distance_km ?? null;
+        const dist = p.apx_lat != null && p.apx_long != null ? calculateDistanceKm(lat, lng, p.apx_lat, p.apx_long) : p.distance_km ?? null;
 
         allSpawns.set(p.encounter_id, {
           ...p,
@@ -459,7 +531,7 @@ export async function POST(req: NextRequest) {
           distance_km: dist
         });
       }
-    }
+    } catch {}
 
     const finalList = Array.from(allSpawns.values())
       .filter((p) => {
