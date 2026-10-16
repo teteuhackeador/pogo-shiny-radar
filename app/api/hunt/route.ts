@@ -147,33 +147,73 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     // MODO 1: 100% IV GLOBAL (HUNDOS MUNDIAIS COM SHUNDOS NO TOPO)
     // =========================================================================
+    // =========================================================================
+    // MODO 1: 100% IV GLOBAL (HUNDOS MUNDIAIS VIA MAP/LOOKUP MULTI-REGIONAL)
+    // =========================================================================
     if (mode === "hundo_global") {
-      const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
-        if (idx > 0) {
-          await new Promise((r) => setTimeout(r, idx * 120));
-        }
-        const payload: any = {
-          shiny_only: false,
-          level_min: slice.min,
-          level_max: slice.max,
-          iv_mode: "percent",
-          iv_percent_min: 100,
-          iv_percent_max: 100
-        };
-        if (slice.sort) {
-          payload.sort = slice.sort;
-        }
-        return executeSearchWithRetry(payload, idx);
+      const hundoRegions = [
+        { name: "NA_East", n: 44.5, s: 40.0, w: -80.5, e: -73.5 }, // Leste EUA / Toronto
+        { name: "NA_West", n: 38.5, s: 33.5, w: -123.0, e: -117.5 }, // Oeste EUA / SF
+        { name: "Europe", n: 52.0, s: 40.5, w: -2.0, e: 5.0 },     // Europa (Zaragoza, Londres, Paris)
+        { name: "Asia", n: 36.5, s: 1.0, w: 103.0, e: 140.5 },     // Ásia (Tóquio, Taiwan, Cingapura)
+        { name: "South_America", n: -22.0, s: -24.5, w: -47.5, e: -45.5 }, // Brasil / SP
+        { name: "Oceania", n: -33.5, s: -38.5, w: 144.5, e: 151.5 } // Austrália (Sydney, Melbourne)
+      ];
+
+      const regionPromises = hundoRegions.map(async (r, idx) => {
+        if (idx > 0) await new Promise((res) => setTimeout(res, idx * 60));
+        const token = POGO_TOKENS[idx % POGO_TOKENS.length];
+        try {
+          const res = await fetch(`${BASE_API_URL}/map/lookup`, {
+            method: "POST",
+            headers: getRandomSpoofedHeaders(token),
+            signal: AbortSignal.timeout(9000),
+            body: JSON.stringify({
+              mode: "pokemon",
+              n_lat: r.n,
+              s_lat: r.s,
+              w_lng: r.w,
+              e_lng: r.e,
+              filters: { iv_percent_min: 100 }
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            for (const p of data.results || []) {
+              if (p.despawn_at_ms && p.despawn_at_ms <= now) continue;
+              if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
+              if (hiddenSpecies.includes(p.pokemon_name)) continue;
+
+              const pLat = p.apx_lat ?? null;
+              const pLng = p.apx_long ?? null;
+              const dist =
+                pLat != null && pLng != null && !isNaN(lat) && !isNaN(lng)
+                  ? calculateDistanceKm(lat, lng, pLat, pLng)
+                  : p.distance_km ?? null;
+
+              allSpawns.set(p.encounter_id, {
+                ...p,
+                despawn_at: p.despawn_at_ms ? new Date(p.despawn_at_ms).toISOString() : p.despawn_at,
+                raw_iv: p.raw_iv || "15/15/15",
+                iv_percent: 100,
+                exact_coords: null,
+                distance_km: dist
+              });
+            }
+          }
+        } catch {}
       });
 
-      const sliceResults = await Promise.all(slicePromises);
-
-      for (const res of sliceResults) {
-        if (res.rateLimited) {
-          rateLimitHit = true;
-          if (res.retryAfter) maxRetryAfter = Math.max(maxRetryAfter, res.retryAfter);
-        }
-        for (const p of res.results) {
+      // Também puxa do /search global para complementar com Shundos e CPs altos
+      const searchPromise = executeSearchWithRetry({
+        shiny_only: false,
+        iv_mode: "percent",
+        iv_percent_min: 100,
+        iv_percent_max: 100,
+        sort: "CP"
+      }, 0).then((searchRes) => {
+        for (const p of searchRes.results || []) {
           if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
           if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
@@ -190,7 +230,9 @@ export async function POST(req: NextRequest) {
             distance_km: dist
           });
         }
-      }
+      });
+
+      await Promise.all([...regionPromises, searchPromise]);
 
       // Shundos (shiny: true) no topo absoluto! Seguidos por distância ou CP
       const finalList = Array.from(allSpawns.values())
@@ -208,8 +250,7 @@ export async function POST(req: NextRequest) {
         success: true,
         count: finalList.length,
         mode: "hundo_global",
-        rate_limited: rateLimitHit,
-        retry_after: maxRetryAfter > 0 ? maxRetryAfter : undefined,
+        rate_limited: false,
         results: finalList
       };
 

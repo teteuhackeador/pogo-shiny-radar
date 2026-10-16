@@ -258,16 +258,19 @@ export default function Home() {
         return Array.from(spawnMap.values());
       });
 
-      let countMsg = `${results.length} novos alvos encontrados.`;
+      const totalLoaded = results.length;
+      let countMsg = `${totalLoaded} alvos carregados.`;
       if (activeMode === "hundo_global") {
         const shundosFound = results.filter((s) => s.shiny).length;
-        countMsg = `Varredura concluída: ${results.length} Hundos coletados (${shundosFound} Shundo pro seu código!)`;
+        countMsg = `${totalLoaded} Hundos 100% IV no radar (${shundosFound} Shundos pro seu código!)`;
       } else if (activeMode === "shiny_global") {
-        countMsg = `${results.length} Shinies ativos confirmados pra sua conta no mundo!`;
+        countMsg = `${totalLoaded} Shinies ativos confirmados pra sua conta no mundo!`;
       } else if (activeMode === "shundo_local") {
-        countMsg = `${results.length} Shundo(s) (15/15/15) encontrados no raio de ${activeRadius}km!`;
+        countMsg = `${totalLoaded} Shundo(s) (15/15/15) no raio de ${activeRadius}km!`;
       } else if (activeMode === "shundo_global") {
-        countMsg = `${results.length} Shundo(s) (15/15/15) confirmados no mundo!`;
+        countMsg = `${totalLoaded} Shundo(s) (15/15/15) confirmados no mundo!`;
+      } else if (activeMode === "local_shiny") {
+        countMsg = `${totalLoaded} Shinies detectados no raio de ${activeRadius}km!`;
       }
       showToast(countMsg);
     } catch (err: any) {
