@@ -353,10 +353,10 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
           type="button"
           onClick={handleCopyCoords}
           disabled={revealing || isExpired}
-          className={`h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+          className={`h-11 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer select-none transition-colors ${
             copied
               ? "bg-zinc-200 text-zinc-950 font-bold"
-              : "bg-[#18181b] hover:bg-[#202024] text-zinc-100 border border-[#27272a]"
+              : "bg-[#18181b] hover:bg-[#202024] active:bg-zinc-800 text-zinc-100 border border-[#27272a]"
           }`}
         >
           {revealing ? (
@@ -381,7 +381,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
           type="button"
           onClick={handleOpenMaps}
           disabled={revealing || isExpired}
-          className="h-10 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-[#18181b] hover:bg-[#202024] text-zinc-100 border border-[#27272a] transition-all active:scale-95"
+          className="h-11 px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-[#18181b] hover:bg-[#202024] active:bg-zinc-800 text-zinc-100 border border-[#27272a] cursor-pointer select-none transition-colors"
         >
           <ExternalLink className="w-3.5 h-3.5 text-zinc-300" />
           <span>Maps</span>

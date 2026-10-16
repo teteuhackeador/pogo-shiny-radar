@@ -41,8 +41,9 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center gap-2">
           {onOpenSniper && (
             <button
+              type="button"
               onClick={onOpenSniper}
-              className="px-2.5 py-1 rounded-lg bg-[#18181b] hover:bg-[#222226] border border-[#27272a] hover:border-zinc-700 text-zinc-300 hover:text-white text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95"
+              className="px-2.5 py-1 rounded-lg bg-[#18181b] hover:bg-[#222226] active:bg-zinc-800 border border-[#27272a] hover:border-zinc-700 text-zinc-300 hover:text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer select-none transition-colors"
               title="Configurar sentinela no celular"
             >
               <Radio className="w-3 h-3 text-zinc-400" />

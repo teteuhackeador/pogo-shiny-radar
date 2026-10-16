@@ -52,14 +52,12 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   const [gpsError, setGpsError] = useState<string | null>(null);
 
   const isLocalMode = huntMode === "local_shiny" || huntMode === "shundo_local";
-  // Em modo local, mantém ajustes expandidos para facilitar raio/cidade. Em modo global, recolhe para economizar tela.
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(isLocalMode);
 
   useEffect(() => {
     setCoordsInput(`${lat},${lng}`);
   }, [lat, lng]);
 
-  // Se trocar para modo local, abre os ajustes automaticamente
   useEffect(() => {
     if (isLocalMode) {
       setIsSettingsOpen(true);
@@ -115,7 +113,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
     onExecuteScan();
   };
 
-  // Identifica se a coordenada atual bate com algum preset
   const matchedPreset = GEO_PRESETS.find(
     (p) => Math.abs(lat - p.lat) < 0.01 && Math.abs(lng - p.lng) < 0.01
   );
@@ -140,7 +137,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
 
   return (
     <div className="bg-[#121214] border border-[#27272a] rounded-2xl p-2.5 sm:p-3.5 text-zinc-100 space-y-2.5">
-      {/* 1. Segmented Control Tático Horizontal - Zero AI Slop */}
+      {/* 1. Segmented Control Tático Horizontal - Otimizado para Touch */}
       <div>
         <div className="flex gap-1 overflow-x-auto no-scrollbar p-1 rounded-xl bg-[#0a0a0c] border border-[#222226]">
           {modes.map((mode) => {
@@ -152,10 +149,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 key={mode}
                 type="button"
                 onClick={() => onHuntModeChange(mode)}
-                className={`flex-1 min-w-[76px] sm:min-w-0 py-2 px-1.5 rounded-lg text-[11px] font-medium flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${
+                className={`flex-1 min-w-[76px] sm:min-w-0 py-2.5 px-1.5 rounded-lg text-[11px] font-medium flex flex-col items-center justify-center gap-1 select-none cursor-pointer transition-colors ${
                   isSelected
                     ? "bg-[#27272a] text-zinc-100 font-semibold shadow-sm border border-zinc-700/80"
-                    : "text-zinc-400 hover:text-zinc-200 hover:bg-[#18181b]/60"
+                    : "text-zinc-400 hover:text-zinc-200 active:bg-zinc-850"
                 }`}
               >
                 <Icon className={`w-3.5 h-3.5 ${isSelected ? "text-zinc-100" : "text-zinc-400"}`} />
@@ -185,7 +182,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         <button
           type="button"
           onClick={() => setIsSettingsOpen((prev) => !prev)}
-          className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 py-0.5 px-2 rounded-lg bg-[#222226] hover:bg-[#2c2c31] border border-[#2c2c31] transition-colors"
+          className="flex-shrink-0 flex items-center gap-1 text-[11px] font-medium text-zinc-300 hover:text-white py-1 px-2.5 rounded-lg bg-[#222226] hover:bg-[#2c2c31] active:bg-zinc-700 border border-[#2c2c31] transition-colors cursor-pointer select-none"
         >
           <SlidersHorizontal className="w-3 h-3 text-zinc-400" />
           <span>{isSettingsOpen ? "Ocultar" : "Ajustes"}</span>
@@ -214,10 +211,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     key={preset.name}
                     type="button"
                     onClick={() => handleApplyPreset(preset)}
-                    className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                    className={`flex-shrink-0 px-2.5 py-1.5 rounded-lg text-[11px] font-medium select-none cursor-pointer transition-colors ${
                       isSelected
                         ? "bg-zinc-200 text-zinc-950 font-semibold"
-                        : "bg-[#18181b] text-zinc-300 hover:text-white border border-[#27272a]"
+                        : "bg-[#18181b] text-zinc-300 hover:text-white active:bg-zinc-800 border border-[#27272a]"
                     }`}
                   >
                     {preset.name}
@@ -241,7 +238,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 type="button"
                 onClick={handleUseCurrentLocation}
                 disabled={isGettingGps}
-                className="flex-shrink-0 h-[36px] px-3 rounded-xl text-xs font-semibold bg-[#18181b] hover:bg-[#202024] text-zinc-200 border border-[#27272a] flex items-center gap-1.5 transition-all active:scale-95"
+                className="flex-shrink-0 h-[38px] px-3.5 rounded-xl text-xs font-semibold bg-[#18181b] hover:bg-[#202024] active:bg-zinc-800 text-zinc-200 border border-[#27272a] flex items-center gap-1.5 select-none cursor-pointer transition-colors"
                 title="Obter localização atual via GPS"
               >
                 {isGettingGps ? (
@@ -273,10 +270,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                       key={r}
                       type="button"
                       onClick={() => onRadiusChange(r)}
-                      className={`py-1 rounded-lg text-[11px] font-mono transition-colors ${
+                      className={`py-1.5 rounded-lg text-[11px] font-mono select-none cursor-pointer transition-colors ${
                         radiusKm === r
                           ? "bg-zinc-200 text-zinc-950 font-bold"
-                          : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
+                          : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 active:bg-zinc-800 border border-[#27272a]"
                       }`}
                     >
                       {r}
@@ -302,10 +299,10 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                     key={c}
                     type="button"
                     onClick={() => onTargetCountChange(c)}
-                    className={`py-1 rounded-lg text-[11px] font-mono transition-colors ${
+                    className={`py-1.5 rounded-lg text-[11px] font-mono select-none cursor-pointer transition-colors ${
                       targetCount === c
                         ? "bg-zinc-200 text-zinc-950 font-bold"
-                        : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
+                        : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 active:bg-zinc-800 border border-[#27272a]"
                     }`}
                   >
                     {c}
@@ -317,18 +314,18 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </form>
       )}
 
-      {/* 4. Botão de Disparo Primário - Ergonômico de 44px para o polegar */}
+      {/* 4. Botão de Disparo Primário - Ergonômico de 46px para o polegar com toque imediato */}
       <div>
         <button
           type="button"
           onClick={onExecuteScan}
           disabled={isLoading}
-          className={`w-full h-11 rounded-xl text-xs font-bold tracking-wide flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${
+          className={`w-full h-12 rounded-xl text-xs font-bold tracking-wide flex items-center justify-center gap-2 select-none cursor-pointer transition-colors ${
             isLoading
               ? "bg-zinc-800 text-zinc-400 border border-[#27272a] cursor-wait"
               : hasModeChanged
-              ? "bg-zinc-100 hover:bg-white text-zinc-950 shadow-md ring-2 ring-zinc-400/30"
-              : "bg-zinc-100 hover:bg-white text-zinc-950 shadow-sm"
+              ? "bg-zinc-100 hover:bg-white active:bg-zinc-300 text-zinc-950 shadow-md ring-2 ring-zinc-400/30"
+              : "bg-zinc-100 hover:bg-white active:bg-zinc-300 text-zinc-950 shadow-sm"
           }`}
         >
           {isLoading ? (

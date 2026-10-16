@@ -8,11 +8,19 @@
 html, body {
   background-color: #09090b;
   color: #f4f4f5;
-  min-height: 100vh;
-  max-width: 100vw;
-  overflow-x: hidden;
+  min-height: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Otimização de Toque Mobile - Resposta Imediata sem Atraso de 300ms */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, a, input, select, [role="button"] {
+  touch-action: manipulation;
+  cursor: pointer;
 }
 
 /* Ocultar barra de rolagem horizontal mantendo scroll funcional */

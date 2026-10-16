@@ -257,7 +257,7 @@ export const SniperModal: React.FC<SniperModalProps> = ({
               <div className="sm:self-end">
                 <button
                   onClick={handleTestAlarm}
-                  className="w-full sm:w-auto px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-100 rounded-lg font-medium text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-all active:scale-95"
+                  className="w-full sm:w-auto px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-100 rounded-lg font-medium text-xs flex items-center justify-center gap-2 border border-zinc-700 transition-colors cursor-pointer select-none"
                 >
                   <Bell className="w-3.5 h-3.5 text-amber-400" />
                   Testar Alarme no Celular

@@ -491,9 +491,9 @@ export default function Home() {
         </div>
       )}
 
-      {/* Toast Notifier Flutuante no Rodapé */}
+      {/* Toast Notifier Flutuante no Rodapé - sem bloquear toques */}
       {toastMessage && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#18181b] border border-[#27272a] shadow-xl text-xs text-zinc-100 font-medium animate-in fade-in slide-in-from-bottom-2 duration-150">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#18181b] border border-[#27272a] shadow-xl text-xs text-zinc-100 font-medium animate-in fade-in slide-in-from-bottom-2 duration-150">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
           <span>{toastMessage}</span>
         </div>
