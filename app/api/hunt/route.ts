@@ -10,6 +10,13 @@ import { PokemonSpawn, RadarHuntMode } from "@/types/pokemon";
 
 export const maxDuration = 30;
 
+// Cache em memória no servidor (dura 20 segundos) para proteger o usuário de tomar 429 se clicar rápido
+interface CachedResult {
+  timestamp: number;
+  data: any;
+}
+const searchCache = new Map<string, CachedResult>();
+
 function getRandomSpoofedHeaders(authToken: string) {
   const ip = `10.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 254 + 1)}`;
   return {
@@ -23,17 +30,52 @@ function getRandomSpoofedHeaders(authToken: string) {
   };
 }
 
-// Fatiamento por faixas de nível para bypass do teto de 10 da API
-const LEVEL_SLICES = [
-  { min: 1, max: 5 },
-  { min: 6, max: 10 },
-  { min: 11, max: 15 },
-  { min: 16, max: 20 },
-  { min: 21, max: 25 },
-  { min: 26, max: 28 },
-  { min: 29, max: 31 },
-  { min: 32, max: 35 }
+// 3 fatias equilibradas de nível para extrair até 30-40 spawns sem estourar o rate limit de rajada da API
+const BALANCED_SLICES = [
+  { min: 1, max: 15 },
+  { min: 16, max: 25 },
+  { min: 26, max: 35 }
 ];
+
+// Helper para fetch com timeout e rotação de token
+async function executeSearchWithRetry(payload: any, tokenIndex: number): Promise<{ results: any[]; rateLimited?: boolean; retryAfter?: number }> {
+  const tokensToTry = [
+    POGO_TOKENS[tokenIndex % POGO_TOKENS.length],
+    POGO_TOKENS[(tokenIndex + 1) % POGO_TOKENS.length]
+  ];
+
+  for (const token of tokensToTry) {
+    try {
+      const res = await fetch(`${BASE_API_URL}/search`, {
+        method: "POST",
+        headers: getRandomSpoofedHeaders(token),
+        signal: AbortSignal.timeout(9000),
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return { results: data.results || [] };
+      }
+
+      if (res.status === 429) {
+        let retrySec = 15;
+        try {
+          const errData = await res.json();
+          if (errData?.detail?.retry_after) {
+            retrySec = parseInt(errData.detail.retry_after, 10);
+          }
+        } catch {}
+        // Tenta o próximo token do pool
+        continue;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return { results: [], rateLimited: true, retryAfter: 15 };
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -52,47 +94,47 @@ export async function POST(req: NextRequest) {
       mode = "shundo_local";
     }
 
-    const allSpawns = new Map<string, PokemonSpawn>();
+    // Chave de cache para evitar rajadas repetidas no mesmo modo
+    const cacheKey = `${mode}_${trainerCode}_${isNaN(lat) ? "global" : `${lat.toFixed(2)}_${lng.toFixed(2)}`}`;
     const now = Date.now();
-    let totalQueries = 0;
+    const cached = searchCache.get(cacheKey);
+    if (cached && now - cached.timestamp < 15000) {
+      return NextResponse.json({
+        ...cached.data,
+        cached: true
+      });
+    }
+
+    const allSpawns = new Map<string, PokemonSpawn>();
+    let rateLimitHit = false;
+    let maxRetryAfter = 0;
 
     // =========================================================================
-    // MODO 1: 100% IV GLOBAL (TODOS OS 100% IV NO MUNDO, SHUNDOS NO TOPO)
+    // MODO 1: 100% IV GLOBAL (HUNDOS MUNDIAIS COM SHUNDOS NO TOPO)
     // =========================================================================
     if (mode === "hundo_global") {
-      const slicePromises = LEVEL_SLICES.map(async (slice, idx) => {
-        totalQueries++;
-        const token = POGO_TOKENS[idx % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
-
-        try {
-          const res = await fetch(`${BASE_API_URL}/search`, {
-            method: "POST",
-            headers: getRandomSpoofedHeaders(token),
-            signal: AbortSignal.timeout(6000),
-            body: JSON.stringify({
-              shiny_only: false,
-              shiny_account: trainerCode,
-              level_min: slice.min,
-              level_max: slice.max,
-              iv_mode: "percent",
-              iv_percent_min: 100,
-              iv_percent_max: 100,
-              sort: "DSP"
-            })
-          });
-
-          if (!res.ok) return [];
-          const data = await res.json();
-          return data.results || [];
-        } catch {
-          return [];
-        }
+      const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+        const payload = {
+          shiny_only: false,
+          shiny_account: trainerCode,
+          level_min: slice.min,
+          level_max: slice.max,
+          iv_mode: "percent",
+          iv_percent_min: 100,
+          iv_percent_max: 100,
+          sort: "DSP"
+        };
+        return executeSearchWithRetry(payload, idx);
       });
 
       const sliceResults = await Promise.all(slicePromises);
 
-      for (const batch of sliceResults) {
-        for (const p of batch) {
+      for (const res of sliceResults) {
+        if (res.rateLimited) {
+          rateLimitHit = true;
+          if (res.retryAfter) maxRetryAfter = Math.max(maxRetryAfter, res.retryAfter);
+        }
+        for (const p of res.results) {
           if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
           if (hiddenSpecies.includes(p.pokemon_name)) continue;
 
@@ -123,52 +165,48 @@ export async function POST(req: NextRequest) {
         })
         .slice(0, targetCount);
 
-      return NextResponse.json({
+      const responsePayload = {
         success: true,
         count: finalList.length,
-        rounds: totalQueries,
         mode: "hundo_global",
+        rate_limited: rateLimitHit,
+        retry_after: maxRetryAfter > 0 ? maxRetryAfter : undefined,
         results: finalList
-      });
+      };
+
+      if (finalList.length > 0) {
+        searchCache.set(cacheKey, { timestamp: now, data: responsePayload });
+      }
+
+      return NextResponse.json(responsePayload);
     }
 
     // =========================================================================
     // MODO 2: SHUNDO GLOBAL (ESTRITAMENTE SHUNDOS REAIS 100% IV + SHINY NO MUNDO)
     // =========================================================================
     if (mode === "shundo_global") {
-      const slicePromises = LEVEL_SLICES.map(async (slice, idx) => {
-        totalQueries++;
-        const token = POGO_TOKENS[idx % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
-
-        try {
-          const res = await fetch(`${BASE_API_URL}/search`, {
-            method: "POST",
-            headers: getRandomSpoofedHeaders(token),
-            signal: AbortSignal.timeout(6000),
-            body: JSON.stringify({
-              shiny_only: true,
-              shiny_account: trainerCode,
-              level_min: slice.min,
-              level_max: slice.max,
-              iv_mode: "percent",
-              iv_percent_min: 100,
-              iv_percent_max: 100,
-              sort: "DSP"
-            })
-          });
-
-          if (!res.ok) return [];
-          const data = await res.json();
-          return data.results || [];
-        } catch {
-          return [];
-        }
+      const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+        const payload = {
+          shiny_only: true,
+          shiny_account: trainerCode,
+          level_min: slice.min,
+          level_max: slice.max,
+          iv_mode: "percent",
+          iv_percent_min: 100,
+          iv_percent_max: 100,
+          sort: "DSP"
+        };
+        return executeSearchWithRetry(payload, idx);
       });
 
       const sliceResults = await Promise.all(slicePromises);
 
-      for (const batch of sliceResults) {
-        for (const p of batch) {
+      for (const res of sliceResults) {
+        if (res.rateLimited) {
+          rateLimitHit = true;
+          if (res.retryAfter) maxRetryAfter = Math.max(maxRetryAfter, res.retryAfter);
+        }
+        for (const p of res.results) {
           if (!p.shiny || p.iv_percent !== 100) continue;
           if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
           if (hiddenSpecies.includes(p.pokemon_name)) continue;
@@ -198,49 +236,45 @@ export async function POST(req: NextRequest) {
         })
         .slice(0, targetCount);
 
-      return NextResponse.json({
+      const responsePayload = {
         success: true,
         count: finalList.length,
-        rounds: totalQueries,
         mode: "shundo_global",
+        rate_limited: rateLimitHit,
+        retry_after: maxRetryAfter > 0 ? maxRetryAfter : undefined,
         results: finalList
-      });
+      };
+
+      if (finalList.length > 0) {
+        searchCache.set(cacheKey, { timestamp: now, data: responsePayload });
+      }
+
+      return NextResponse.json(responsePayload);
     }
 
     // =========================================================================
-    // MODO 3: TODOS OS SHINIES GLOBAIS DA CONTA (50-80+ SHINIES NO PLANETA)
+    // MODO 3: TODOS OS SHINIES GLOBAIS DA CONTA (SHINIES ATIVOS NO MUNDO)
     // =========================================================================
     if (mode === "shiny_global") {
-      const slicePromises = LEVEL_SLICES.map(async (slice, idx) => {
-        totalQueries++;
-        const token = POGO_TOKENS[idx % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
-
-        try {
-          const res = await fetch(`${BASE_API_URL}/search`, {
-            method: "POST",
-            headers: getRandomSpoofedHeaders(token),
-            signal: AbortSignal.timeout(6000),
-            body: JSON.stringify({
-              shiny_only: true,
-              shiny_account: trainerCode,
-              level_min: slice.min,
-              level_max: slice.max,
-              sort: "DSP"
-            })
-          });
-
-          if (!res.ok) return [];
-          const data = await res.json();
-          return data.results || [];
-        } catch {
-          return [];
-        }
+      const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+        const payload = {
+          shiny_only: true,
+          shiny_account: trainerCode,
+          level_min: slice.min,
+          level_max: slice.max,
+          sort: "DSP"
+        };
+        return executeSearchWithRetry(payload, idx);
       });
 
       const sliceResults = await Promise.all(slicePromises);
 
-      for (const batch of sliceResults) {
-        for (const p of batch) {
+      for (const res of sliceResults) {
+        if (res.rateLimited) {
+          rateLimitHit = true;
+          if (res.retryAfter) maxRetryAfter = Math.max(maxRetryAfter, res.retryAfter);
+        }
+        for (const p of res.results) {
           if (!p.shiny) continue;
           if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
           if (hiddenSpecies.includes(p.pokemon_name)) continue;
@@ -259,7 +293,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Ordenar por IV decrescente (melhores primeiros) e depois CP
+      // Ordenar por IV decrescente
       const finalList = Array.from(allSpawns.values())
         .sort((a, b) => {
           if ((b.iv_percent || 0) !== (a.iv_percent || 0)) {
@@ -269,13 +303,20 @@ export async function POST(req: NextRequest) {
         })
         .slice(0, targetCount);
 
-      return NextResponse.json({
+      const responsePayload = {
         success: true,
         count: finalList.length,
-        rounds: totalQueries,
         mode: "shiny_global",
+        rate_limited: rateLimitHit,
+        retry_after: maxRetryAfter > 0 ? maxRetryAfter : undefined,
         results: finalList
-      });
+      };
+
+      if (finalList.length > 0) {
+        searchCache.set(cacheKey, { timestamp: now, data: responsePayload });
+      }
+
+      return NextResponse.json(responsePayload);
     }
 
     // =========================================================================
@@ -289,45 +330,34 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================================================================
-    // MODO 4: SHUNDO LOCAL (SHUNDOS REAIS NO RAIO VIA MULTI-SLICE PARALELO)
+    // MODO 4: SHUNDO LOCAL (NO RAIO)
     // =========================================================================
     if (mode === "shundo_local") {
-      const slicePromises = LEVEL_SLICES.map(async (slice, idx) => {
-        totalQueries++;
-        const token = POGO_TOKENS[idx % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
-
-        try {
-          const res = await fetch(`${BASE_API_URL}/search`, {
-            method: "POST",
-            headers: getRandomSpoofedHeaders(token),
-            signal: AbortSignal.timeout(6000),
-            body: JSON.stringify({
-              shiny_only: true,
-              shiny_account: trainerCode,
-              level_min: slice.min,
-              level_max: slice.max,
-              iv_mode: "percent",
-              iv_percent_min: 100,
-              iv_percent_max: 100,
-              center_lat: lat,
-              center_lng: lng,
-              radius_km: radiusKm,
-              sort: "DIST"
-            })
-          });
-
-          if (!res.ok) return [];
-          const data = await res.json();
-          return data.results || [];
-        } catch {
-          return [];
-        }
+      const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+        const payload = {
+          shiny_only: true,
+          shiny_account: trainerCode,
+          level_min: slice.min,
+          level_max: slice.max,
+          iv_mode: "percent",
+          iv_percent_min: 100,
+          iv_percent_max: 100,
+          center_lat: lat,
+          center_lng: lng,
+          radius_km: radiusKm,
+          sort: "DIST"
+        };
+        return executeSearchWithRetry(payload, idx);
       });
 
       const sliceResults = await Promise.all(slicePromises);
 
-      for (const batch of sliceResults) {
-        for (const p of batch) {
+      for (const res of sliceResults) {
+        if (res.rateLimited) {
+          rateLimitHit = true;
+          if (res.retryAfter) maxRetryAfter = Math.max(maxRetryAfter, res.retryAfter);
+        }
+        for (const p of res.results) {
           if (!p.shiny || p.iv_percent !== 100) continue;
           if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
           if (hiddenSpecies.includes(p.pokemon_name)) continue;
@@ -355,48 +385,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         count: finalList.length,
-        rounds: totalQueries,
         mode: "shundo_local",
+        rate_limited: rateLimitHit,
+        retry_after: maxRetryAfter > 0 ? maxRetryAfter : undefined,
         results: finalList
       });
     }
 
     // =========================================================================
-    // MODO 5: SHINYS NO RAIO LOCAL (TODOS OS SHINYS NO RAIO VIA MULTI-SLICE)
+    // MODO 5: SHINYS NO RAIO LOCAL
     // =========================================================================
-    const slicePromises = LEVEL_SLICES.map(async (slice, idx) => {
-      totalQueries++;
-      const token = POGO_TOKENS[idx % POGO_TOKENS.length] || DEFAULT_POGO_TOKEN;
-
-      try {
-        const res = await fetch(`${BASE_API_URL}/search`, {
-          method: "POST",
-          headers: getRandomSpoofedHeaders(token),
-          signal: AbortSignal.timeout(6000),
-          body: JSON.stringify({
-            shiny_only: true,
-            shiny_account: trainerCode,
-            level_min: slice.min,
-            level_max: slice.max,
-            center_lat: lat,
-            center_lng: lng,
-            radius_km: radiusKm,
-            sort: "DIST"
-          })
-        });
-
-        if (!res.ok) return [];
-        const data = await res.json();
-        return data.results || [];
-      } catch {
-        return [];
-      }
+    const slicePromises = BALANCED_SLICES.map(async (slice, idx) => {
+      const payload = {
+        shiny_only: true,
+        shiny_account: trainerCode,
+        level_min: slice.min,
+        level_max: slice.max,
+        center_lat: lat,
+        center_lng: lng,
+        radius_km: radiusKm,
+        sort: "DIST"
+      };
+      return executeSearchWithRetry(payload, idx);
     });
 
     const sliceResults = await Promise.all(slicePromises);
 
-    for (const batch of sliceResults) {
-      for (const p of batch) {
+    for (const res of sliceResults) {
+      if (res.rateLimited) {
+        rateLimitHit = true;
+        if (res.retryAfter) maxRetryAfter = Math.max(maxRetryAfter, res.retryAfter);
+      }
+      for (const p of res.results) {
         if (!p.shiny) continue;
         if (p.despawn_at && new Date(p.despawn_at).getTime() <= now) continue;
         if (hiddenSpecies.includes(p.pokemon_name)) continue;
@@ -427,8 +447,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       count: finalList.length,
-      rounds: totalQueries,
       mode: "local_shiny",
+      rate_limited: rateLimitHit,
+      retry_after: maxRetryAfter > 0 ? maxRetryAfter : undefined,
       results: finalList
     });
   } catch (error: any) {
