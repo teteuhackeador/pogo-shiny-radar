@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { PokemonSpawn } from "@/types/pokemon";
 import { getPokemonSpriteUrl, getPokemonFallbackSprite, calculateDistanceKm } from "@/lib/constants";
 import {
@@ -23,6 +23,7 @@ interface ShinyCardProps {
   coordsCenter: { lat: number; lng: number };
   isCaptured: boolean;
   revealedCoords?: string | null;
+  currentTime: number;
   onToggleCaptured: (encounterId: string) => void;
   onRevealSuccess: (encounterId: string, coords: string) => void;
   onRateLimited: (retryAfter: number) => void;
@@ -30,54 +31,47 @@ interface ShinyCardProps {
   onToast?: (message: string) => void;
 }
 
-export const ShinyCard: React.FC<ShinyCardProps> = ({
+const ShinyCardBase: React.FC<ShinyCardProps> = ({
   pokemon,
   coordsCenter,
   isCaptured,
   revealedCoords,
+  currentTime,
   onToggleCaptured,
   onRevealSuccess,
   onRateLimited,
   onHideSpecies,
   onToast
 }) => {
-  const [imgSrc, setImgSrc] = useState<string>(getPokemonSpriteUrl(pokemon.pokemon_id));
+  const [imgSrc, setImgSrc] = useState<string>(() =>
+    getPokemonSpriteUrl(pokemon.pokemon_id, pokemon.shiny)
+  );
   const [copied, setCopied] = useState<boolean>(false);
   const [revealing, setRevealing] = useState<boolean>(false);
   const [revealError, setRevealError] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState<string>("");
-  const [isExpired, setIsExpired] = useState<boolean>(false);
-  const [isCriticalTime, setIsCriticalTime] = useState<boolean>(false);
 
   const exactCoords = revealedCoords || pokemon.exact_coords;
 
-  // Atualização em tempo real do temporizador de despawn
-  useEffect(() => {
-    if (!pokemon.despawn_at) return;
+  // Cálculo derivado puro e instantâneo sem nenhum setInterval consumidor de CPU/bateria
+  let timeLeft = "Calculando...";
+  let isExpired = false;
+  let isCriticalTime = false;
 
-    const updateTimer = () => {
-      const now = new Date().getTime();
-      const despawnTime = new Date(pokemon.despawn_at).getTime();
-      const diffMs = despawnTime - now;
+  if (pokemon.despawn_at && currentTime > 0) {
+    const despawnTime = new Date(pokemon.despawn_at).getTime();
+    const diffMs = despawnTime - currentTime;
 
-      if (diffMs <= 0) {
-        setTimeLeft("Expirado");
-        setIsExpired(true);
-        setIsCriticalTime(false);
-        return;
-      }
-
+    if (diffMs <= 0) {
+      timeLeft = "Expirado";
+      isExpired = true;
+    } else {
       const totalSec = Math.floor(diffMs / 1000);
-      setIsCriticalTime(totalSec <= 180);
+      isCriticalTime = totalSec <= 180;
       const minutes = Math.floor(totalSec / 60);
       const seconds = totalSec % 60;
-      setTimeLeft(`${minutes}m ${seconds.toString().padStart(2, "0")}s`);
-    };
-
-    updateTimer();
-    const interval = setInterval(updateTimer, 1000);
-    return () => clearInterval(interval);
-  }, [pokemon.despawn_at]);
+      timeLeft = `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+    }
+  }
 
   // Revela e retorna a coordenada (exata verdadeira ou fallback aproximado)
   const fetchExactCoords = async (): Promise<{ coords: string; isApprox: boolean } | null> => {
@@ -250,7 +244,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
             <button
               type="button"
               onClick={() => onHideSpecies(pokemon.pokemon_name)}
-              className="flex items-center justify-center w-7 h-7 rounded-lg text-zinc-400 hover:text-zinc-200 bg-[#18181b] border border-[#27272a] hover:border-zinc-700 transition-colors"
+              className="flex items-center justify-center w-7 h-7 rounded-lg text-zinc-400 hover:text-zinc-200 bg-[#18181b] border border-[#27272a] hover:border-zinc-700 select-none cursor-pointer transition-colors"
               title={`Ocultar todos os ${pokemon.pokemon_name}`}
             >
               <EyeOff className="w-3.5 h-3.5" />
@@ -260,7 +254,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
           <button
             type="button"
             onClick={() => onToggleCaptured(pokemon.encounter_id)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium select-none cursor-pointer transition-colors ${
               isCaptured
                 ? "bg-zinc-800 text-zinc-200 border border-zinc-700"
                 : "bg-[#18181b] text-zinc-400 hover:text-zinc-200 border border-[#27272a]"
@@ -277,16 +271,19 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
         </div>
       </div>
 
-      {/* Linha Central: Sprite + Metadados */}
+      {/* Linha Central: Sprite Otimizado + Metadados */}
       <div className="flex items-center gap-3 py-1.5">
-        <div className="relative w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-xl bg-[#0e0e11] border border-[#222226]">
+        <div className="relative w-11 h-11 flex-shrink-0 flex items-center justify-center rounded-xl bg-[#0e0e11] border border-[#222226]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imgSrc}
             alt={pokemon.pokemon_name}
             onError={() => setImgSrc(getPokemonFallbackSprite(pokemon.pokemon_id))}
-            className="w-10 h-10 object-contain"
+            className="w-9 h-9 object-contain"
             loading="lazy"
+            decoding="async"
+            width={36}
+            height={36}
           />
         </div>
 
@@ -302,7 +299,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
                   : "text-zinc-300"
               }
             >
-              {timeLeft ? `${timeLeft} restantes` : "Calculando..."}
+              {timeLeft || "Calculando..."}
             </span>
           </div>
 
@@ -347,7 +344,7 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
         </p>
       )}
 
-      {/* Linha Inferior: Botões Ergonômicos com 40px de altura para o Dedão */}
+      {/* Linha Inferior: Botões Ergonômicos com 44px de altura para o Dedão */}
       <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-[#222226]">
         <button
           type="button"
@@ -390,3 +387,15 @@ export const ShinyCard: React.FC<ShinyCardProps> = ({
     </div>
   );
 };
+
+// Memorização de alta performance: só re-renderiza se mudar ID, coordenadas, captura ou tempo a cada 5 segundos
+export const ShinyCard = React.memo<ShinyCardProps>(ShinyCardBase, (prev, next) => {
+  return (
+    prev.pokemon.encounter_id === next.pokemon.encounter_id &&
+    prev.isCaptured === next.isCaptured &&
+    prev.revealedCoords === next.revealedCoords &&
+    prev.coordsCenter.lat === next.coordsCenter.lat &&
+    prev.coordsCenter.lng === next.coordsCenter.lng &&
+    Math.floor(prev.currentTime / 5000) === Math.floor(next.currentTime / 5000)
+  );
+});

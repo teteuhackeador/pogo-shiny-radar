@@ -69,14 +69,17 @@ export const GEO_PRESETS: GeoPreset[] = [
 ];
 
 /**
- * Retorna a URL do sprite oficial de alta resolução para Pokémons Shiny
+ * Retorna a URL do sprite otimizado e leve (96x96px, ~6KB) para evitar estourar a memória RAM do celular
  */
-export function getPokemonSpriteUrl(pokemonId: number): string {
-  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/shiny/${pokemonId}.png`;
+export function getPokemonSpriteUrl(pokemonId: number, isShiny: boolean = true): string {
+  if (isShiny) {
+    return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${pokemonId}.png`;
+  }
+  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonId}.png`;
 }
 
 export function getPokemonFallbackSprite(pokemonId: number): string {
-  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/${pokemonId}.png`;
+  return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${pokemonId}.png`;
 }
 
 /**

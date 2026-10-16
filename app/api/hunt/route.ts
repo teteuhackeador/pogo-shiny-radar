@@ -10,12 +10,21 @@ import { PokemonSpawn, RadarHuntMode } from "@/types/pokemon";
 
 export const maxDuration = 30;
 
-// Cache em memória no servidor (dura 20 segundos) para proteger o usuário de tomar 429 se clicar rápido
+// Cache em memória no servidor com auto-prune para proteger contra 429 e vazamento de RAM
 interface CachedResult {
   timestamp: number;
   data: any;
 }
 const searchCache = new Map<string, CachedResult>();
+
+function pruneCache() {
+  const now = Date.now();
+  for (const [k, v] of searchCache.entries()) {
+    if (now - v.timestamp > 15000 || searchCache.size > 20) {
+      searchCache.delete(k);
+    }
+  }
+}
 
 function getRandomSpoofedHeaders(authToken: string) {
   const ip = `10.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 254 + 1)}`;
@@ -255,6 +264,7 @@ export async function POST(req: NextRequest) {
       };
 
       if (finalList.length > 0) {
+        pruneCache();
         searchCache.set(cacheKey, { timestamp: now, data: responsePayload });
       }
 
@@ -321,6 +331,7 @@ export async function POST(req: NextRequest) {
       };
 
       if (finalList.length > 0) {
+        pruneCache();
         searchCache.set(cacheKey, { timestamp: now, data: responsePayload });
       }
 
@@ -438,6 +449,7 @@ export async function POST(req: NextRequest) {
       };
 
       if (finalList.length > 0) {
+        pruneCache();
         searchCache.set(cacheKey, { timestamp: now, data: responsePayload });
       }
 

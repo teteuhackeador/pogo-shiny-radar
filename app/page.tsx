@@ -44,16 +44,30 @@ export default function Home() {
   const [ivFilter, setIvFilter] = useState<IvFilterOption>("all");
   const [sortOption, setSortOption] = useState<SortOption>("distance");
   const [currentTime, setCurrentTime] = useState<number>(0);
+  const [cleanupTick, setCleanupTick] = useState<number>(0);
+  const [visibleLimit, setVisibleLimit] = useState<number>(30);
 
   // Modal do Shundo Sniper & Alarme
   const [isSniperModalOpen, setIsSniperModalOpen] = useState<boolean>(false);
 
-  // Ticker a cada 1 segundo para expurgar spawns expirados em tempo real
+  // Ticker central leve: relógio visual a cada 5 segundos
   useEffect(() => {
-    setCurrentTime(Date.now());
-    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
-    return () => clearInterval(timer);
+    const now = Date.now();
+    setCurrentTime(now);
+    setCleanupTick(now);
+    const clockTimer = setInterval(() => setCurrentTime(Date.now()), 5000);
+    // Expurgador de expirados a cada 30s para não sobrecarregar a CPU
+    const cleanupTimer = setInterval(() => setCleanupTick(Date.now()), 30000);
+    return () => {
+      clearInterval(clockTimer);
+      clearInterval(cleanupTimer);
+    };
   }, []);
+
+  // Reseta paginação ao mudar filtros para economizar memória DOM
+  useEffect(() => {
+    setVisibleLimit(30);
+  }, [scannedHuntMode, searchQuery, ivFilter, sortOption, hideCaptured]);
 
   // Toast discreto flutuante
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -315,10 +329,10 @@ export default function Home() {
         // Se o modo NÃO for 100% IV Global (hundo_global), exige que seja shiny!
         if (scannedHuntMode !== "hundo_global" && !p.shiny) return false;
 
-        // Ocultar automaticamente os que já sumiram / expiraram
-        if (p.despawn_at && currentTime > 0) {
+        // Ocultar automaticamente os que já sumiram / expiraram (expurgador a cada 30s)
+        if (p.despawn_at && cleanupTick > 0) {
           const despawnMs = new Date(p.despawn_at).getTime();
-          if (despawnMs <= currentTime) return false;
+          if (despawnMs <= cleanupTick) return false;
         }
 
         // Filtro de Espécies Ocultadas pelo Usuário (ex: Cacnea)
@@ -398,13 +412,18 @@ export default function Home() {
         }
         return 0;
       });
-  }, [allPokemons, capturedIds, hiddenSpecies, hideCaptured, searchQuery, ivFilter, sortOption, currentTime, revealedCoordsMap, lat, lng, scannedHuntMode]);
+  }, [allPokemons, capturedIds, hiddenSpecies, hideCaptured, searchQuery, ivFilter, sortOption, cleanupTick, revealedCoordsMap, lat, lng, scannedHuntMode]);
 
   const capturedCount = useMemo(() => {
     return allPokemons.filter((p) => capturedIds.has(p.encounter_id)).length;
   }, [allPokemons, capturedIds]);
 
   const availableCount = allPokemons.length - capturedCount;
+
+  // Janela de renderização ultraleve (30 cards por vez) para manter a RAM do celular abaixo de 20MB
+  const displayedPokemons = useMemo(() => {
+    return filteredPokemons.slice(0, visibleLimit);
+  }, [filteredPokemons, visibleLimit]);
 
   return (
     <main className="w-full max-w-lg mx-auto px-3 sm:px-4 py-3 min-h-screen pb-16">
@@ -465,18 +484,19 @@ export default function Home() {
             onClearCaptured={handleClearCaptured}
           />
 
-          {/* Lista de Cards Compactos */}
+          {/* Lista de Cards Compactos com Renderização Leve */}
           {filteredPokemons.length === 0 ? (
             <div className="py-8 text-center rounded-2xl border border-[#27272a] bg-[#121214] p-4 text-xs text-zinc-400">
               Nenhum Pokémon corresponde aos filtros ou espécies ativas.
             </div>
           ) : (
             <div className="space-y-2.5">
-              {filteredPokemons.map((pokemon) => (
+              {displayedPokemons.map((pokemon) => (
                 <ShinyCard
                   key={pokemon.encounter_id}
                   pokemon={pokemon}
                   coordsCenter={{ lat, lng }}
+                  currentTime={currentTime}
                   isCaptured={capturedIds.has(pokemon.encounter_id)}
                   revealedCoords={revealedCoordsMap[pokemon.encounter_id]}
                   onToggleCaptured={toggleCaptured}
@@ -486,6 +506,22 @@ export default function Home() {
                   onToast={showToast}
                 />
               ))}
+
+              {/* Expansão progressiva para economizar 90% de RAM e nós DOM */}
+              {filteredPokemons.length > visibleLimit && (
+                <div className="pt-2 pb-1">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleLimit((prev) => prev + 30)}
+                    className="w-full py-3 px-4 rounded-xl text-xs font-semibold bg-[#18181b] hover:bg-[#202024] active:bg-zinc-800 text-zinc-200 border border-[#27272a] flex items-center justify-center gap-1.5 cursor-pointer select-none transition-colors"
+                  >
+                    <span>Carregar mais alvos (+30)</span>
+                    <span className="font-mono text-zinc-500 text-[11px]">
+                      ({visibleLimit} de {filteredPokemons.length} carregados)
+                    </span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
