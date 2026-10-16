@@ -5,6 +5,7 @@ import { Header } from "@/components/Header";
 import { ControlPanel } from "@/components/ControlPanel";
 import { FilterBar, SpeciesCountItem } from "@/components/FilterBar";
 import { ShinyCard } from "@/components/ShinyCard";
+import { SniperModal } from "@/components/SniperModal";
 import {
   PokemonSpawn,
   IvFilterOption,
@@ -12,7 +13,7 @@ import {
   RadarHuntMode,
   HuntResponse
 } from "@/types/pokemon";
-import { calculateDistanceKm } from "@/lib/constants";
+import { calculateDistanceKm, DEFAULT_TRAINER_CODE } from "@/lib/constants";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 
 export default function Home() {
@@ -42,6 +43,9 @@ export default function Home() {
   const [ivFilter, setIvFilter] = useState<IvFilterOption>("all");
   const [sortOption, setSortOption] = useState<SortOption>("distance");
   const [currentTime, setCurrentTime] = useState<number>(0);
+
+  // Modal do Shundo Sniper & Alarme
+  const [isSniperModalOpen, setIsSniperModalOpen] = useState<boolean>(false);
 
   // Ticker a cada 1 segundo para expurgar spawns expirados em tempo real
   useEffect(() => {
@@ -381,7 +385,11 @@ export default function Home() {
   return (
     <main className="w-full max-w-lg mx-auto px-3 sm:px-4 py-3 min-h-screen pb-16">
       {/* Cabeçalho */}
-      <Header cooldownSeconds={cooldownSeconds} totalFound={allPokemons.length} />
+      <Header
+        cooldownSeconds={cooldownSeconds}
+        totalFound={allPokemons.length}
+        onOpenSniper={() => setIsSniperModalOpen(true)}
+      />
 
       {/* Painel de Coordenadas e Scan com os 3 Modos */}
       <ControlPanel
@@ -465,6 +473,13 @@ export default function Home() {
           <span>{toastMessage}</span>
         </div>
       )}
+
+      {/* Modal Shundo Sniper & Alarme Noturno */}
+      <SniperModal
+        isOpen={isSniperModalOpen}
+        onClose={() => setIsSniperModalOpen(false)}
+        trainerCode={DEFAULT_TRAINER_CODE}
+      />
     </main>
   );
 }

@@ -6,9 +6,14 @@ import { Radio, AlertCircle } from "lucide-react";
 interface HeaderProps {
   cooldownSeconds?: number;
   totalFound?: number;
+  onOpenSniper?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ cooldownSeconds = 0, totalFound = 0 }) => {
+export const Header: React.FC<HeaderProps> = ({
+  cooldownSeconds = 0,
+  totalFound = 0,
+  onOpenSniper
+}) => {
   return (
     <header className="mb-4 space-y-2">
       {/* Banner de Rate Limit da API */}
@@ -33,17 +38,29 @@ export const Header: React.FC<HeaderProps> = ({ cooldownSeconds = 0, totalFound 
           </h1>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-zinc-400">
-          {totalFound > 0 ? (
-            <span className="font-mono text-zinc-300">
-              {totalFound} encontrados
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-zinc-400 text-[11px]">
-              <Radio className="w-3 h-3 text-emerald-400" />
-              Online
-            </span>
+        <div className="flex items-center gap-2">
+          {onOpenSniper && (
+            <button
+              onClick={onOpenSniper}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-xs font-medium flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
+              title="Configurar sentinela e alarme no celular"
+            >
+              <Radio className="w-3 h-3 text-amber-400 animate-pulse" />
+              <span>Sniper Celular</span>
+            </button>
           )}
+
+          <div className="text-xs text-zinc-400">
+            {totalFound > 0 ? (
+              <span className="font-mono text-zinc-300">
+                {totalFound} alvos
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-zinc-400 text-[11px]">
+                Online
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </header>
